@@ -142,7 +142,7 @@ app.get('/deployment', (req, res) => {
   res.json({
     ...deploymentInfo,
     infrastructure: {
-      platform: 'AWS App Runner',
+      platform: 'AWS App Runner Test',
       container: 'Docker',
       orchestration: 'AWS CDK',
       ci_cd: 'GitHub Actions'
