@@ -325,7 +325,7 @@ app.post('/webhook', (req, res) => {
   });
 });
 
-// 404 Handlers
+// 404 Handler
 app.use((req, res) => {
   metrics.errors++;
   res.status(404).json({
