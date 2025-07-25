@@ -8,7 +8,7 @@ export class InfraStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // 1. ECR Repository erstellen
+    // 1. ECR Repository wird erstellt
     const repo = new ecr.Repository(this, 'AppRepository', {
       repositoryName: 'bachelor-app-repo',
       imageScanOnPush: true,
@@ -27,7 +27,7 @@ export class InfraStack extends cdk.Stack {
       }),
       autoDeploymentsEnabled: true,
       cpu: apprunner.Cpu.QUARTER_VCPU,
-      memory: apprunner.Memory.HALF_GB,
+      memory: apprunner.Memory.HALF_GIB,
     });
     */
   }
