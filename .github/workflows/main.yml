@@ -65,7 +65,7 @@ jobs:
       - name: AWS-Zugangsdaten konfigurieren
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: eu-central-1
 
       - name: Bei Amazon ECR anmelden
