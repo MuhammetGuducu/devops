@@ -80,7 +80,7 @@ describe('GET /chaos - Chaos Engineering', () => {
     const response = await request(app).get('/chaos?scenario=slow');
     expect(response.statusCode).toBe(200);
     expect(response.body.scenario).toBe('slow');
-  }, 3000); // Timeout erhöht für langsame Response
+  }, 3000); // Timeout erhöht für langsame Response, sonst
 
   it('Simuliert Fehler', async () => {
     const response = await request(app).get('/chaos?scenario=error');
