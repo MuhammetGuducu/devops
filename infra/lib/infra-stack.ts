@@ -17,13 +17,17 @@ export class InfraStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: InfraStackProps) {
     super(scope, id, props);
 
-    const serviceName = props.isPreview ? 
-      `bachelor-preview-pr-${props.prNumber}` : 'bachelor-rest-api';
-    const repoName = props.isPreview ? 
-      `bachelor-preview-repo-pr-${props.prNumber}` : 'bachelor-app-repo';  // WICHTIG: Gleicher Name wie in GitHub Actions
+    // Logischer Service-Name für ENV und Namensgebung von Secrets/Dashboards
+    const logicalServiceName = props.isPreview
+      ? `bachelor-preview-pr-${props.prNumber}`
+      : 'bachelor-rest-api';
+    const repoName = props.isPreview
+      ? `bachelor-preview-repo-pr-${props.prNumber}`
+      : 'bachelor-app-repo';
 
-    // ECR Repository - verwende bestehende wenn möglich
-    const repo = ecr.Repository.fromRepositoryName(this, 'AppRepository', repoName) as ecr.Repository || 
+    // ECR Repository verwendet bestehende, wenn möglich
+    const repo = ecr.Repository.fromRepositoryName(this, 'AppRepository', repoName)
+      as ecr.Repository ||
       new ecr.Repository(this, 'AppRepository', {
         repositoryName: repoName,
         removalPolicy: props.isPreview ? cdk.RemovalPolicy.DESTROY : cdk.RemovalPolicy.RETAIN,
@@ -33,8 +37,8 @@ export class InfraStack extends cdk.Stack {
         lifecycleRules: [{
           description: 'Behalte nur die neuesten Images',
           maxImageCount: props.isPreview ? 3 : 20,
-          rulePriority: 1
-        }]
+          rulePriority: 1,
+        }],
       });
 
     // Tags für bessere Organisation
@@ -46,8 +50,6 @@ export class InfraStack extends cdk.Stack {
       assumedBy: new iam.ServicePrincipal('tasks.apprunner.amazonaws.com'),
       description: 'Rolle für Bachelor Demo Service in App Runner',
     });
-
-    // Berechtigungen
     apprunnerInstanceRole.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName('AWSXRayDaemonWriteAccess')
     );
@@ -56,27 +58,25 @@ export class InfraStack extends cdk.Stack {
     );
 
     // X-Ray Observability Configuration (nur Production)
-    const observability = props.isPreview ? undefined : 
-      new apprunner.ObservabilityConfiguration(this, 'ObservabilityConfig', {
-        observabilityConfigurationName: `${serviceName}-xray`,
-        traceConfigurationVendor: apprunner.TraceConfigurationVendor.AWSXRAY
-      });
+    const observability = props.isPreview
+      ? undefined
+      : new apprunner.ObservabilityConfiguration(this, 'ObservabilityConfig', {
+          observabilityConfigurationName: `${logicalServiceName}-xray`,
+          traceConfigurationVendor: apprunner.TraceConfigurationVendor.AWSXRAY,
+        });
 
     // Secrets Manager für API Keys (nur Production)
     let apiSecret: secretsmanager.Secret | undefined;
     if (!props.isPreview) {
       apiSecret = new secretsmanager.Secret(this, 'ApiSecret', {
-        secretName: `${serviceName}/api-key`,
+        secretName: `${logicalServiceName}/api-key`,
         description: 'API Key für Bachelor Demo Service',
         generateSecretString: {
-          secretStringTemplate: JSON.stringify({ 
-            apiKey: 'DEMO-KEY',
-            environment: 'production' 
-          }),
+          secretStringTemplate: JSON.stringify({ apiKey: 'DEMO-KEY', environment: 'production' }),
           generateStringKey: 'value',
           excludePunctuation: true,
-          excludeCharacters: ' %+~`#$&*()|[]{}:;<>?!\'\/@"\\',
-          passwordLength: 32
+          excludeCharacters: ' %+~`#$&*()|[]{}:;<>?!\'/@"\\',
+          passwordLength: 32,
         },
       });
       apiSecret.grantRead(apprunnerInstanceRole);
@@ -86,18 +86,14 @@ export class InfraStack extends cdk.Stack {
     const environmentVariables: { [key: string]: string } = {
       NODE_ENV: props.isPreview ? 'preview' : 'production',
       AWS_REGION: this.region,
-      SERVICE_NAME: serviceName,
+      SERVICE_NAME: logicalServiceName,
     };
-
-    // Version und Commit SHA hinzufügen
     if (props.appVersion) {
       environmentVariables.APP_VERSION = props.appVersion;
     }
     if (props.commitSha) {
       environmentVariables.COMMIT_SHA = props.commitSha;
     }
-
-    // Feature Flags
     if (!props.isPreview) {
       environmentVariables.NEW_FEATURE = 'true';
       environmentVariables.DEBUG_MODE = 'false';
@@ -105,16 +101,15 @@ export class InfraStack extends cdk.Stack {
 
     // App Runner Service
     const service = new apprunner.Service(this, 'AppRunnerService', {
-      serviceName: serviceName,
       source: apprunner.Source.fromEcr({
         repository: repo,
         tagOrDigest: props.isPreview ? `pr-${props.prNumber}` : 'latest',
         imageConfiguration: {
           port: 8080,
           environmentVariables,
-          environmentSecrets: apiSecret ? {
-            API_KEY: apprunner.Secret.fromSecretsManager(apiSecret, 'value'),
-          } : undefined,
+          environmentSecrets: apiSecret
+            ? { API_KEY: apprunner.Secret.fromSecretsManager(apiSecret, 'value') }
+            : undefined,
         },
       }),
       instanceRole: apprunnerInstanceRole,
@@ -128,20 +123,20 @@ export class InfraStack extends cdk.Stack {
       }),
       cpu: apprunner.Cpu.QUARTER_VCPU,
       memory: apprunner.Memory.HALF_GB,
-      autoDeploymentsEnabled: false, // Manuelles Deployment
+      autoDeploymentsEnabled: false,
     });
 
     // CloudWatch Dashboard (nur Production)
     if (!props.isPreview) {
-      const dashboard = new cloudwatch.Dashboard(this, 'ServiceDashboard', {
-        dashboardName: `${serviceName}-dashboard`,
+      new cloudwatch.Dashboard(this, 'ServiceDashboard', {
+        dashboardName: `${logicalServiceName}-dashboard`,
         widgets: [[
           new cloudwatch.TextWidget({
             markdown: `# Bachelor DevOps Demo Dashboard\n\n**Environment:** Production\n**Region:** ${this.region}`,
             width: 24,
-            height: 2
-          })
-        ]]
+            height: 2,
+          }),
+        ]],
       });
     }
 
@@ -149,15 +144,13 @@ export class InfraStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ServiceURL', {
       value: `https://${service.serviceUrl}`,
       description: props.isPreview ? 'Preview Environment URL' : 'Production Service URL',
-      exportName: `${serviceName}-url`,
+      exportName: `${logicalServiceName}-url`,
     });
-
     new cdk.CfnOutput(this, 'ECRRepositoryURI', {
       value: repo.repositoryUri,
       description: 'ECR Repository URI',
-      exportName: `${serviceName}-ecr-uri`,
+      exportName: `${logicalServiceName}-ecr-uri`,
     });
-
     new cdk.CfnOutput(this, 'ServiceARN', {
       value: service.serviceArn,
       description: 'App Runner Service ARN',
