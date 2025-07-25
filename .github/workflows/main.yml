@@ -4,6 +4,7 @@ on:
   push:
     branches: [ "main" ]
 
+# Erforderliche Berechtigungen für AWS OIDC und das Hochladen von Security-Scans
 permissions:
   id-token: write
   contents: read
@@ -113,7 +114,8 @@ jobs:
 
       - name: ECR Repository erstellen (falls nicht vorhanden)
         run: |
-          aws ecr describe-repositories --repository-names ${{ env.ECR_REPOSITORY }} --region ${{ env.AWS_REGION }} || \
+          # Leitet die Ausgabe um, damit bei Erfolg keine Meldung kommt
+          aws ecr describe-repositories --repository-names ${{ env.ECR_REPOSITORY }} --region ${{ env.AWS_REGION }} >/dev/null 2>&1 || \
           aws ecr create-repository --repository-name ${{ env.ECR_REPOSITORY }} --region ${{ env.AWS_REGION }}
 
       - name: Docker-Image bauen & nach ECR pushen
@@ -130,10 +132,28 @@ jobs:
             -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:v$VERSION .
           
           echo "Pushing images to ECR..."
-          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
-          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
-          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:v$VERSION
+          # Optimierung: Ein Befehl pusht alle Tags
+          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }} --all-tags
           echo "Push completed"
+
+      - name: Bestehenden App Runner Service löschen (falls vorhanden)
+        run: |
+          SERVICE_NAME="bachelor-rest-api"
+          echo "Prüfe, ob ein Service namens '$SERVICE_NAME' existiert um Namenskonflikte zu vermeiden"
+          
+          SERVICE_ARN=$(aws apprunner list-services \
+            --query "ServiceSummaryList[?ServiceName=='$SERVICE_NAME'].ServiceArn" \
+            --output text)
+
+          if [ -n "$SERVICE_ARN" ]; then
+            echo "Service gefunden (ARN: $SERVICE_ARN). Lösche um Platz für das CDK-Deployment zu machen."
+            aws apprunner delete-service --service-arn "$SERVICE_ARN"
+            echo "Löschbefehl gesendet. Warte bis der Service vollständig gelöscht ist, um Race Conditions zu verhindern"
+            aws apprunner wait service-deleted --service-arn "$SERVICE_ARN"
+            echo "Service erfolgreich gelöscht."
+          else
+            echo "Service '$SERVICE_NAME' nicht gefunden. Überspringe Löschung."
+          fi
 
       - name: Node.js für CDK einrichten
         uses: actions/setup-node@v4
@@ -152,9 +172,11 @@ jobs:
           echo "Building TypeScript..."
           npm run build
           
-          echo "Deploying CDK stack..."
+          echo "Deploying CDK stack for production..."
+          # WICHTIG: Expliziter Context 'isPreview=false' wird an CDK übergeben
           npx cdk deploy \
             --require-approval never \
+            --context isPreview=false \
             --context appVersion=$APP_VERSION \
             --context commitSha=$COMMIT_SHA
           
@@ -162,8 +184,11 @@ jobs:
 
       - name: Service URL ausgeben
         run: |
+          # Stellen Sie sicher, dass dieser Stack-Name dem entspricht, den Sie in Ihrer CDK-App definieren
+          # z.B. new InfraStack(app, 'bachelor-prod-stack', ...);
+          STACK_NAME="bachelor-prod-stack" 
           SERVICE_URL=$(aws cloudformation describe-stacks \
-            --stack-name bachelor-prod-stack \
-            --query 'Stacks[0].Outputs[?OutputKey==`ServiceURL`].OutputValue' \
+            --stack-name $STACK_NAME \
+            --query "Stacks[0].Outputs[?OutputKey=='ServiceURL'].OutputValue" \
             --output text)
           echo "🚀 Service deployed to: $SERVICE_URL"
