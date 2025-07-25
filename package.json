@@ -1,7 +1,7 @@
 {
   "name": "bachelor-projekt",
   "version": "1.0.0",
-  "description": "funktionsfähige CI/CD-Pipeline für meine Bachelorarbeit.",
+  "description": "DevOps-Demo-Service für CI/CD-Pipeline Bachelorarbeit",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -17,7 +17,8 @@
   "license": "ISC",
   "dependencies": {
     "aws-xray-sdk-core": "^3.10.1",
-    "express": "^4.21.1"
+    "express": "^4.21.1",
+    "node-cache": "^5.1.2"
   },
   "devDependencies": {
     "jest": "^29.7.0",
