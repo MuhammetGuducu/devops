@@ -11,6 +11,7 @@ describe('GET / - Hauptseite', () => {
   });
 });
 
+/*
 describe('GET /health - Health Check', () => {
   it('Antwortet mit Status 200 und JSON', async () => {
     const response = await request(app).get('/health');
@@ -20,6 +21,16 @@ describe('GET /health - Health Check', () => {
     expect(response.body).toHaveProperty('version');
   });
 });
+*/
+
+describe('GET /health - Health Check', () => {
+  it('Antwortet mit Status 503 für den Rollback-Test', async () => {
+    const response = await request(app).get('/health');
+    expect(response.statusCode).toBe(503);
+    expect(response.body.status).toBe('unhealthy');
+  });
+});
+
 
 describe('GET /deployment - Deployment Info', () => {
   it('Antwortet mit Deployment-Informationen', async () => {

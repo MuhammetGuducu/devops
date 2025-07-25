@@ -4,6 +4,7 @@ const AWSXRay = require('aws-xray-sdk-core');
 const NodeCache = require('node-cache');
 const app = express();
 const port = 8080;
+const { SecretsManagerClient, GetSecretValueCommand } = require("@aws-sdk/client-secrets-manager"); 
 
 // Deployment-Info aus Umgebungsvariablen
 const deploymentInfo = {
