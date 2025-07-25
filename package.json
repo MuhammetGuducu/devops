@@ -1,20 +1,31 @@
 {
-  "name": "bachelorarbeitDevOps",
+  "name": "bachelor-projekt",
   "version": "1.0.0",
+  "description": "funktionsfähige CI/CD-Pipeline für meine Bachelorarbeit.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "jest"
+    "test": "jest --ci --reporters=default --reporters=jest-junit"
   },
-  "keywords": [],
+  "keywords": [
+    "devops",
+    "ci-cd",
+    "aws",
+    "app-runner"
+  ],
   "author": "",
   "license": "ISC",
-  "description": "",
   "dependencies": {
-    "express": "^5.1.0"
+    "aws-xray-sdk": "^3.7.0",
+    "express": "^4.19.2"
   },
   "devDependencies": {
-    "jest": "^30.0.5",
-    "supertest": "^7.1.4"
+    "jest": "^29.7.0",
+    "jest-junit": "^16.0.0",
+    "supertest": "^7.0.0"
+  },
+  "jest-junit": {
+    "outputDirectory": "reports",
+    "outputName": "jest-junit.xml"
   }
 }

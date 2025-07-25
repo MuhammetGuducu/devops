@@ -1,20 +1,32 @@
 #!/usr/bin/env node
+import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { InfraStack } from '../lib/infra-stack';
 
 const app = new cdk.App();
-new InfraStack(app, 'InfraStack', {
-  /* If you don't specify 'env', this stack will be environment-agnostic.
-   * Account/Region-dependent features and context lookups will not work,
-   * but a single synthesized template can be deployed anywhere. */
 
-  /* Uncomment the next line to specialize this stack for the AWS Account
-   * and Region that are implied by the current CLI configuration. */
-  // env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION },
+// Lese die Pull-Request-Nummer aus dem Kontext, der von der GitHub Action übergeben wird
+const prNumber = app.node.tryGetContext('pr_number');
 
-  /* Uncomment the next line if you know exactly what Account and Region you
-   * want to deploy the stack to. */
-  // env: { account: '123456789012', region: 'us-east-1' },
-
-  /* For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html */
-});
+if (prNumber) {
+  // Wenn eine PR-Nummer vorhanden ist, erstelle einen temporären Preview-Stack
+  new InfraStack(app, `BachelorPreviewStack-PR${prNumber}`, {
+    stackName: `bachelor-preview-pr-${prNumber}`,
+    isPreview: true,
+    prNumber: prNumber,
+    env: {
+      account: process.env.CDK_DEFAULT_ACCOUNT,
+      region: process.env.CDK_DEFAULT_REGION,
+    },
+  });
+} else {
+  // Andernfalls erstelle den permanenten Produktions-Stack
+  new InfraStack(app, 'BachelorProdStack', {
+    stackName: 'bachelor-prod-stack',
+    isPreview: false,
+    env: {
+      account: process.env.CDK_DEFAULT_ACCOUNT,
+      region: process.env.CDK_DEFAULT_REGION,
+    },
+  });
+}

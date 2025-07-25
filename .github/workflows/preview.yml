@@ -1,0 +1,58 @@
+name: Vorschau - Temporäre Umgebung deployen
+
+on:
+  pull_request:
+    types: [opened, synchronize, closed]
+
+permissions:
+  id-token: write      # Für AWS-Authentifizierung
+  contents: read       # Für Code-Checkout
+  pull-requests: write # Um Kommentare im PR zu posten
+
+jobs:
+  deploy-preview:
+    name: Job - Vorschau deployen/zerstören
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code auschecken
+        uses: actions/checkout@v4
+
+      - name: AWS-Zugangsdaten konfigurieren
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: eu-central-1
+
+      - name: Node.js für CDK einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: CDK-Abhängigkeiten installieren
+        working-directory: ./infra
+        run: npm ci
+
+      - name: Vorschau-Stack deployen
+        if: github.event.action != 'closed'
+        working-directory: ./infra
+        run: cdk deploy --context pr_number=${{ github.event.number }} --require-approval never
+
+      - name: Vorschau-URL auslesen
+        if: github.event.action != 'closed'
+        id: cfn-outputs
+        uses: aws-actions/aws-cloudformation-outputs@v1
+        with:
+          stack-name: bachelor-preview-pr-${{ github.event.number }}
+
+      - name: URL im Pull Request posten
+        if: github.event.action != 'closed'
+        uses: mshick/add-pr-comment@v2
+        with:
+          message: |
+            ✅ **Vorschau bereit:**
+            Hier klicken: ${{ steps.cfn-outputs.outputs.PreviewURL }}
+
+      - name: Vorschau-Stack zerstören
+        if: github.event.action == 'closed'
+        working-directory: ./infra
+        run: cdk destroy --context pr_number=${{ github.event.number }} --force

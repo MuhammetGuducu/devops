@@ -1,0 +1,92 @@
+name: Produktion - Bauen, Scannen & Deployen
+
+on:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  id-token: write      # Für AWS-Authentifizierung
+  contents: read       # Für Code-Checkout
+  security-events: write # Für Trivy-Scan-Upload
+
+jobs:
+  build-and-scan:
+    name: Job - Bauen, Testen & Scannen
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code auschecken
+        uses: actions/checkout@v4
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Abhängigkeiten installieren & Tests ausführen
+        run: |
+          npm ci
+          npm test
+
+      - name: Test-Reports hochladen
+        uses: actions/upload-artifact@v4
+        if: always() # Auch bei Fehlschlag
+        with:
+          name: test-reports
+          path: reports/jest-junit.xml
+
+      - name: Docker-Image für Scan bauen
+        id: build-image
+        run: |
+          docker build -t bachelor-app:${{ github.sha }} .
+          echo "image_tag=bachelor-app:${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      - name: Trivy Vulnerability Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ steps.build-image.outputs.image_tag }}'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH' # Pipeline-Abbruch bei hohen Risiken
+
+      - name: Trivy-Ergebnisse hochladen
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  deploy:
+    name: Job - Nach Produktion deployen
+    runs-on: ubuntu-latest
+    needs: build-and-scan # Startet nur nach erfolgreichem Scan
+    steps:
+      - name: Code auschecken
+        uses: actions/checkout@v4
+
+      - name: AWS-Zugangsdaten konfigurieren
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE }}
+          aws-region: eu-central-1
+
+      - name: Bei Amazon ECR anmelden
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Docker-Image bauen & nach ECR pushen
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: bachelor-app-repo
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+      - name: App Runner Service aktualisieren & Deployment starten
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: bachelor-app-repo
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          SERVICE_ARN=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='bachelor-rest-api'].ServiceArn" --output text)
+          aws apprunner update-service --service-arn $SERVICE_ARN --source-configuration "ImageRepository={ImageIdentifier=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG, ImageRepositoryType=ECR}"
+          aws apprunner start-deployment --service-arn $SERVICE_ARN
