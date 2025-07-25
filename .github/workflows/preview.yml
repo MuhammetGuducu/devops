@@ -26,7 +26,7 @@ jobs:
       - name: Node.js für App und CDK einrichten
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
       # Build & Push nur wenn PR nicht geschlossen
       - name: App-Tests ausführen
