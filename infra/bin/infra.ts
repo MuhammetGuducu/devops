@@ -5,28 +5,28 @@ import { InfraStack } from '../lib/infra-stack';
 
 const app = new cdk.App();
 
-// Lese die Pull-Request-Nummer aus dem Kontext, der von der GitHub Action übergeben wird
+// Lese die Pull-Request-Nummer aus dem Kontext
 const prNumber = app.node.tryGetContext('pr_number');
 
 if (prNumber) {
-  // Wenn eine PR-Nummer vorhanden ist, erstelle einen temporären Preview-Stack
+  // Preview-Stack für Pull Request
   new InfraStack(app, `BachelorPreviewStack-PR${prNumber}`, {
     stackName: `bachelor-preview-pr-${prNumber}`,
     isPreview: true,
     prNumber: prNumber,
     env: {
       account: process.env.CDK_DEFAULT_ACCOUNT,
-      region: process.env.CDK_DEFAULT_REGION,
+      region: process.env.CDK_DEFAULT_REGION || 'eu-central-1',
     },
   });
 } else {
-  // Andernfalls erstelle den permanenten Produktions-Stack
+  // Produktions-Stack
   new InfraStack(app, 'BachelorProdStack', {
     stackName: 'bachelor-prod-stack',
     isPreview: false,
     env: {
       account: process.env.CDK_DEFAULT_ACCOUNT,
-      region: process.env.CDK_DEFAULT_REGION,
+      region: process.env.CDK_DEFAULT_REGION || 'eu-central-1',
     },
   });
 }

@@ -23,26 +23,61 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: eu-central-1
 
-      - name: Node.js für CDK einrichten
+      - name: Node.js für App und CDK einrichten
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+
+      # Build & Push nur wenn PR nicht geschlossen
+      - name: App-Tests ausführen
+        if: github.event.action != 'closed'
+        run: |
+          npm ci
+          npm test
+
+      - name: Bei Amazon ECR anmelden
+        if: github.event.action != 'closed'
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: CDK-Abhängigkeiten installieren
         working-directory: ./infra
         run: npm ci
 
+      - name: CDK Build
+        working-directory: ./infra
+        run: npm run build
+
+      # Deploy Preview Stack (erstellt auch ECR Repo)
       - name: Vorschau-Stack deployen
         if: github.event.action != 'closed'
         working-directory: ./infra
-        run: cdk deploy --context pr_number=${{ github.event.number }} --require-approval never
+        run: npm run cdk deploy -- --context pr_number=${{ github.event.number }} --require-approval never --outputs-file ../cdk-outputs.json
+
+      # Docker Image bauen und pushen nach Stack-Erstellung
+      - name: Docker-Image bauen & pushen
+        if: github.event.action != 'closed'
+        run: |
+          # ECR URI aus CDK Output lesen
+          ECR_URI=$(jq -r '.["BachelorPreviewStack-PR${{ github.event.number }}"].ECRRepositoryURI' cdk-outputs.json)
+          # Image bauen und pushen
+          docker build -t $ECR_URI:pr-${{ github.event.number }} .
+          docker push $ECR_URI:pr-${{ github.event.number }}
+
+      # Warte auf App Runner Deployment
+      - name: Auf App Runner Deployment warten
+        if: github.event.action != 'closed'
+        run: |
+          echo "Warte 60 Sekunden auf App Runner Deployment..."
+          sleep 60
 
       - name: Vorschau-URL auslesen
         if: github.event.action != 'closed'
-        id: cfn-outputs
-        uses: aws-actions/aws-cloudformation-outputs@v1
-        with:
-          stack-name: bachelor-preview-pr-${{ github.event.number }}
+        id: get-url
+        run: |
+          # URL aus CDK Output lesen
+          PREVIEW_URL=$(jq -r '.["BachelorPreviewStack-PR${{ github.event.number }}"].ServiceURL' cdk-outputs.json)
+          echo "preview_url=$PREVIEW_URL" >> $GITHUB_OUTPUT
 
       - name: URL im Pull Request posten
         if: github.event.action != 'closed'
@@ -50,9 +85,14 @@ jobs:
         with:
           message: |
             ✅ **Vorschau bereit:**
-            Hier klicken: ${{ steps.cfn-outputs.outputs.PreviewURL }}
+            🔗 ${{ steps.get-url.outputs.preview_url }}
+            
+            **Test-Endpunkte:**
+            - Health Check: ${{ steps.get-url.outputs.preview_url }}/
+            - Trace Test: ${{ steps.get-url.outputs.preview_url }}/trace
+            - Secret Test: ${{ steps.get-url.outputs.preview_url }}/secret
 
       - name: Vorschau-Stack zerstören
         if: github.event.action == 'closed'
         working-directory: ./infra
-        run: cdk destroy --context pr_number=${{ github.event.number }} --force
+        run: npm run cdk destroy -- --context pr_number=${{ github.event.number }} --force

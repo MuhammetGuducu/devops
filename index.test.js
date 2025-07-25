@@ -11,17 +11,17 @@ describe('GET / - Hauptroute', () => {
 });
 
 describe('GET /trace - Trace-Route', () => {
-    it('Antwortet mit Status 200 OK', async () => {
-      const response = await request(app).get('/trace');
-      expect(response.statusCode).toBe(200);
-      expect(response.text).toBe('Trace-Anfrage erfolgreich.');
-    });
+  it('Antwortet mit Status 200 OK', async () => {
+    const response = await request(app).get('/trace');
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe('Trace-Anfrage erfolgreich.');
+  });
 });
 
 // Test für Secret-Route (lokal erwartet: Fehler)
 describe('GET /secret - Secret-Route', () => {
-    it('Antwortet mit Status 500, wenn Secret fehlt', async () => {
-      const response = await request(app).get('/secret');
-      expect(response.statusCode).toBe(500);
-    });
+  it('Antwortet mit Status 500, wenn Secret fehlt', async () => {
+    const response = await request(app).get('/secret');
+    expect(response.statusCode).toBe(500);
+  });
 });

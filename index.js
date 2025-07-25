@@ -1,12 +1,14 @@
 // index.js
 const express = require('express');
-const AWSXRay = require('aws-xray-sdk');
-
+const AWSXRay = require('aws-xray-sdk-core');
 const app = express();
 const port = 8080;
 
-// X-Ray Middleware für alle Anfragen
-app.use(AWSXRay.express.openSegment('Bachelorarbeit-App'));
+// X-Ray für App Runner konfigurieren
+if (process.env._AWS_XRAY_DAEMON_ADDRESS) {
+  AWSXRay.enableManualMode();
+  app.use(AWSXRay.express.openSegment('Bachelorarbeit-App'));
+}
 
 // Hauptroute / Health Check
 app.get('/', (req, res) => {
@@ -15,10 +17,22 @@ app.get('/', (req, res) => {
 
 // Test-Route für X-Ray Subsegments
 app.get('/trace', (req, res) => {
-  // Simuliert eine Hintergrund-Operation
-  setTimeout(() => {
-    res.send('Trace-Anfrage erfolgreich.');
-  }, 50);
+  // Segment nur wenn X-Ray aktiv
+  const segment = AWSXRay.getSegment();
+  
+  if (segment) {
+    const subsegment = segment.addNewSubsegment('trace-operation');
+    // Simuliert eine Hintergrund-Operation
+    setTimeout(() => {
+      subsegment.close();
+      res.send('Trace-Anfrage erfolgreich.');
+    }, 50);
+  } else {
+    // Ohne X-Ray direkt antworten
+    setTimeout(() => {
+      res.send('Trace-Anfrage erfolgreich.');
+    }, 50);
+  }
 });
 
 // Test-Route für Secrets Manager
@@ -33,7 +47,9 @@ app.get('/secret', (req, res) => {
 });
 
 // X-Ray Segment schließen
-app.use(AWSXRay.express.closeSegment());
+if (process.env._AWS_XRAY_DAEMON_ADDRESS) {
+  app.use(AWSXRay.express.closeSegment());
+}
 
 // Server nur starten, wenn direkt ausgeführt
 if (require.main === module) {

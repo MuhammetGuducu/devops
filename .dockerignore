@@ -1,4 +1,10 @@
 node_modules
 .git
+.gitignore
 Dockerfile
 .dockerignore
+infra/
+.github/
+reports/
+*.test.js
+README.md
