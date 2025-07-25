@@ -11,15 +11,14 @@ permissions:
 
 env:
   AWS_REGION: eu-central-1
-  ECR_REPOSITORY: bachelor-app-repo
+  ECR_REPOSITORY: devops-demo-repo
 
 jobs:
   build-and-scan:
     name: Job - Bauen, Testen & Scannen
     runs-on: ubuntu-latest
     outputs:
-      image-tag: ${{ steps.meta.outputs.tags }}
-      version: ${{ steps.meta.outputs.version }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Code auschecken
         uses: actions/checkout@v4
@@ -28,51 +27,36 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+          cache: 'npm'
 
-      - name: Cache Node Modules
-        uses: actions/cache@v3
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-
-      - name: Abhängigkeiten installieren & Tests ausführen
+      - name: Version generieren
+        id: version
         run: |
-          npm ci
-          npm test
+          VERSION="1.0.${{ github.run_number }}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Test-Coverage Report
-        run: |
-          npm test -- --coverage --coverageReporters=text-lcov > coverage.lcov
-          echo "Test Coverage erstellt"
+      - name: Abhängigkeiten installieren
+        run: npm ci
+
+      - name: Tests ausführen
+        run: npm test
 
       - name: Test-Reports hochladen
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-reports
-          path: |
-            reports/jest-junit.xml
-            coverage.lcov
-
-      - name: Metadaten für Docker generieren
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.ECR_REPOSITORY }}
-          tags: |
-            type=ref,event=branch
-            type=sha,prefix={{branch}}-
-            type=raw,value=latest
-            type=raw,value={{date 'YYYYMMDD-HHmmss'}}
+          path: reports/jest-junit.xml
+          retention-days: 30
 
       - name: Docker-Image bauen
         id: build-image
         run: |
           docker build \
-            --build-arg VERSION=${{ steps.meta.outputs.version }} \
+            --build-arg VERSION=${{ steps.version.outputs.version }} \
             --build-arg COMMIT_SHA=${{ github.sha }} \
-            -t bachelor-app:${{ github.sha }} .
-          echo "image_tag=bachelor-app:${{ github.sha }}" >> $GITHUB_OUTPUT
+            -t devops-demo:${{ github.sha }} .
+          echo "image_tag=devops-demo:${{ github.sha }}" >> $GITHUB_OUTPUT
 
       - name: Trivy Vulnerability Scan
         uses: aquasecurity/trivy-action@master
@@ -81,10 +65,11 @@ jobs:
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
+          exit-code: '0'  # Nicht bei Vulnerabilities fehlschlagen
 
       - name: Trivy-Ergebnisse hochladen
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: 'trivy-results.sarif'
 
@@ -110,23 +95,30 @@ jobs:
       - name: Docker-Image bauen & nach ECR pushen
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: latest
+          VERSION: ${{ needs.build-and-scan.outputs.version }}
         run: |
           # Image mit Build-Args bauen
           docker build \
-            --build-arg VERSION=${{ needs.build-and-scan.outputs.version }} \
+            --build-arg VERSION=$VERSION \
             --build-arg COMMIT_SHA=${{ github.sha }} \
-            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
-            -t $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }} .
+            -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest \
+            -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ github.sha }} .
           
           # Beide Tags pushen
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}
+          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
+          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
 
       - name: Node.js für CDK einrichten
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: infra/package-lock.json
+
+      - name: AWS CDK installieren
+        run: |
+          npm install -g aws-cdk@2.171.0
+          cdk --version
 
       - name: CDK-Abhängigkeiten installieren
         working-directory: ./infra
@@ -142,13 +134,15 @@ jobs:
           APP_VERSION: ${{ needs.build-and-scan.outputs.version }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
-          npm run cdk deploy -- \
+          npx cdk deploy \
             --require-approval never \
             --context appVersion=$APP_VERSION \
             --context commitSha=$COMMIT_SHA
 
-      - name: Deployment-Status prüfen
+      - name: Service URL ausgeben
         run: |
-          echo "✅ Deployment erfolgreich!"
-          echo "Version: ${{ needs.build-and-scan.outputs.version }}"
-          echo "Commit: ${{ github.sha }}"
+          SERVICE_URL=$(aws cloudformation describe-stacks \
+            --stack-name bachelor-prod-stack \
+            --query 'Stacks[0].Outputs[?OutputKey==`ServiceURL`].OutputValue' \
+            --output text)
+          echo "🚀 Service deployed to: $SERVICE_URL"

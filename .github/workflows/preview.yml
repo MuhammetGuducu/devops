@@ -9,6 +9,9 @@ permissions:
   contents: read       # Für Code-Checkout
   pull-requests: write # Um Kommentare im PR zu posten
 
+env:
+  AWS_REGION: eu-central-1
+
 jobs:
   deploy-preview:
     name: Job - Vorschau deployen/zerstören
@@ -21,19 +24,27 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: eu-central-1
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Node.js für App und CDK einrichten
+      - name: Node.js einrichten
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '18'
+          cache: 'npm'
 
-      # Build & Push nur wenn PR nicht geschlossen
+      - name: AWS CDK global installieren
+        run: |
+          npm install -g aws-cdk@2.171.0
+          cdk --version
+
+      # Build & Test nur wenn PR nicht geschlossen
+      - name: App-Abhängigkeiten installieren
+        if: github.event.action != 'closed'
+        run: npm ci
+
       - name: App-Tests ausführen
         if: github.event.action != 'closed'
-        run: |
-          npm ci
-          npm test
+        run: npm test
 
       - name: Bei Amazon ECR anmelden
         if: github.event.action != 'closed'
@@ -48,51 +59,94 @@ jobs:
         working-directory: ./infra
         run: npm run build
 
-      # Deploy Preview Stack (erstellt auch ECR Repo)
+      # Deploy Preview Stack
       - name: Vorschau-Stack deployen
         if: github.event.action != 'closed'
         working-directory: ./infra
-        run: npm run cdk deploy -- --context pr_number=${{ github.event.number }} --require-approval never --outputs-file ../cdk-outputs.json
+        run: |
+          npx cdk deploy \
+            --context pr_number=${{ github.event.number }} \
+            --require-approval never \
+            --outputs-file ../cdk-outputs.json
 
-      # Docker Image bauen und pushen nach Stack-Erstellung
+      # Docker Image bauen und pushen
       - name: Docker-Image bauen & pushen
         if: github.event.action != 'closed'
         run: |
           # ECR URI aus CDK Output lesen
           ECR_URI=$(jq -r '.["BachelorPreviewStack-PR${{ github.event.number }}"].ECRRepositoryURI' cdk-outputs.json)
+          
           # Image bauen und pushen
-          docker build -t $ECR_URI:pr-${{ github.event.number }} .
+          docker build \
+            --build-arg VERSION="preview-pr${{ github.event.number }}" \
+            --build-arg COMMIT_SHA=${{ github.sha }} \
+            -t $ECR_URI:pr-${{ github.event.number }} .
+          
           docker push $ECR_URI:pr-${{ github.event.number }}
 
       # Warte auf App Runner Deployment
       - name: Auf App Runner Deployment warten
         if: github.event.action != 'closed'
         run: |
-          echo "Warte 60 Sekunden auf App Runner Deployment..."
-          sleep 60
+          echo "⏳ Warte 90 Sekunden auf App Runner Deployment..."
+          sleep 90
 
       - name: Vorschau-URL auslesen
         if: github.event.action != 'closed'
         id: get-url
         run: |
-          # URL aus CDK Output lesen
           PREVIEW_URL=$(jq -r '.["BachelorPreviewStack-PR${{ github.event.number }}"].ServiceURL' cdk-outputs.json)
           echo "preview_url=$PREVIEW_URL" >> $GITHUB_OUTPUT
 
+      - name: Kommentar finden
+        if: github.event.action != 'closed'
+        uses: peter-evans/find-comment@v3
+        id: fc
+        with:
+          issue-number: ${{ github.event.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: '🚀 Preview Environment'
+
       - name: URL im Pull Request posten
         if: github.event.action != 'closed'
-        uses: mshick/add-pr-comment@v2
+        uses: peter-evans/create-or-update-comment@v4
         with:
-          message: |
-            ✅ **Vorschau bereit:**
-            🔗 ${{ steps.get-url.outputs.preview_url }}
+          comment-id: ${{ steps.fc.outputs.comment-id }}
+          issue-number: ${{ github.event.number }}
+          edit-mode: replace
+          body: |
+            ## 🚀 Preview Environment
             
-            **Test-Endpunkte:**
-            - Health Check: ${{ steps.get-url.outputs.preview_url }}/
-            - Trace Test: ${{ steps.get-url.outputs.preview_url }}/trace
-            - Secret Test: ${{ steps.get-url.outputs.preview_url }}/secret
+            **Status:** ✅ Bereit  
+            **URL:** ${{ steps.get-url.outputs.preview_url }}  
+            **Version:** preview-pr${{ github.event.number }}  
+            **Commit:** `${{ github.sha }}`
+            
+            ### Test-Endpunkte:
+            - [Hauptseite](${{ steps.get-url.outputs.preview_url }}/)
+            - [Health Check](${{ steps.get-url.outputs.preview_url }}/health)
+            - [Metriken](${{ steps.get-url.outputs.preview_url }}/metrics)
+            - [Deployment Info](${{ steps.get-url.outputs.preview_url }}/deployment)
+            - [Feature Flags](${{ steps.get-url.outputs.preview_url }}/feature-flags)
+            
+            ---
+            *Diese Umgebung wird automatisch gelöscht, wenn der PR geschlossen wird.*
 
       - name: Vorschau-Stack zerstören
         if: github.event.action == 'closed'
         working-directory: ./infra
-        run: npm run cdk destroy -- --context pr_number=${{ github.event.number }} --force
+        run: |
+          npx cdk destroy \
+            --context pr_number=${{ github.event.number }} \
+            --force
+
+      - name: Abschluss-Kommentar
+        if: github.event.action == 'closed'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.number }}
+          body: |
+            ## 🗑️ Preview Environment
+            
+            **Status:** ❌ Gelöscht  
+            Die Preview-Umgebung für PR #${{ github.event.number }} wurde erfolgreich entfernt.
