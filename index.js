@@ -111,7 +111,15 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Health Check mit detaillierten Infos
+
+// Fehlerhafte Version für Test Rollback bei Fehlern
+app.get('/health', (req, res) => {
+  console.log('🚨 Provoking intentional health check failure!');
+  res.status(500).json({ status: 'unhealthy', error: 'Intentional failure for rollback test' });
+});
+
+/*
+// Gültig Health Check
 app.get('/health', (req, res) => {
   const uptime = Math.floor((Date.now() - deploymentInfo.startupTime) / 1000);
   const health = {
@@ -127,6 +135,7 @@ app.get('/health', (req, res) => {
   };
   res.json(health);
 });
+*/
 
 // Deployment-Informationen
 app.get('/deployment', (req, res) => {
