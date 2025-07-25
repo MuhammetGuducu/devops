@@ -1,3 +1,4 @@
+// infra/lib/infra-stack.ts
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
@@ -19,29 +20,38 @@ export class InfraStack extends cdk.Stack {
 
     const serviceName = props.isPreview ? 
       `bachelor-preview-pr-${props.prNumber}` : 'bachelor-rest-api';
+    
+    // CRITICAL FIX: Use shared repository for preview environments
     const repoName = props.isPreview ? 
-      `bachelor-preview-repo-pr-${props.prNumber}` : 'bachelor-app-repo';  // WICHTIG: Gleicher Name wie in GitHub Actions
+      'devops-demo-preview-shared' : 'bachelor-app-repo';
 
-    // ECR Repository - verwende bestehende wenn möglich
-    const repo = ecr.Repository.fromRepositoryName(this, 'AppRepository', repoName) as ecr.Repository || 
-      new ecr.Repository(this, 'AppRepository', {
-        repositoryName: repoName,
-        removalPolicy: props.isPreview ? cdk.RemovalPolicy.DESTROY : cdk.RemovalPolicy.RETAIN,
-        emptyOnDelete: props.isPreview,
-        imageScanOnPush: true,
-        imageTagMutability: ecr.TagMutability.MUTABLE,
-        lifecycleRules: [{
-          description: 'Behalte nur die neuesten Images',
-          maxImageCount: props.isPreview ? 3 : 20,
-          rulePriority: 1
-        }]
-      });
+    // Reference existing repository - don't create new ones
+    const repo = ecr.Repository.fromRepositoryName(this, 'AppRepository', repoName);
 
-    // Tags für bessere Organisation
-    cdk.Tags.of(repo).add('Project', 'Bachelor-DevOps');
-    cdk.Tags.of(repo).add('Environment', props.isPreview ? 'preview' : 'production');
+    // App Runner Access Role with proper ECR permissions
+    const appRunnerAccessRole = new iam.Role(this, 'AppRunnerAccessRole', {
+      assumedBy: new iam.ServicePrincipal('build.apprunner.amazonaws.com'),
+      description: 'Access role for App Runner to pull images from ECR',
+      inlinePolicies: {
+        ECRAccessPolicy: new iam.PolicyDocument({
+          statements: [
+            new iam.PolicyStatement({
+              effect: iam.Effect.ALLOW,
+              actions: [
+                'ecr:GetAuthorizationToken',
+                'ecr:BatchCheckLayerAvailability',
+                'ecr:GetDownloadUrlForLayer',
+                'ecr:BatchGetImage',
+                'ecr:DescribeRepositories'
+              ],
+              resources: ['*']
+            })
+          ]
+        })
+      }
+    });
 
-    // IAM-Rolle für App Runner
+    // IAM-Rolle für App Runner Instance
     const apprunnerInstanceRole = new iam.Role(this, 'AppRunnerInstanceRole', {
       assumedBy: new iam.ServicePrincipal('tasks.apprunner.amazonaws.com'),
       description: 'Rolle für Bachelor Demo Service in App Runner',
@@ -103,9 +113,9 @@ export class InfraStack extends cdk.Stack {
       environmentVariables.DEBUG_MODE = 'false';
     }
 
-    // App Runner Service
+    // App Runner Service mit korrekter Konfiguration
     const service = new apprunner.Service(this, 'AppRunnerService', {
-      serviceName: serviceName,
+      serviceName: `devops-demo-preview-pr-${props.prNumber}`,
       source: apprunner.Source.fromEcr({
         repository: repo,
         tagOrDigest: props.isPreview ? `pr-${props.prNumber}` : 'latest',
@@ -117,6 +127,7 @@ export class InfraStack extends cdk.Stack {
           } : undefined,
         },
       }),
+      accessRole: appRunnerAccessRole,
       instanceRole: apprunnerInstanceRole,
       observabilityConfiguration: observability,
       healthCheck: apprunner.HealthCheck.http({
@@ -128,7 +139,7 @@ export class InfraStack extends cdk.Stack {
       }),
       cpu: apprunner.Cpu.QUARTER_VCPU,
       memory: apprunner.Memory.HALF_GB,
-      autoDeploymentsEnabled: false, // Manuelles Deployment
+      autoDeploymentsEnabled: false,
     });
 
     // CloudWatch Dashboard (nur Production)
