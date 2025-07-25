@@ -62,7 +62,7 @@ export class InfraStack extends cdk.Stack {
         traceConfigurationVendor: apprunner.TraceConfigurationVendor.AWSXRAY
       });
 
-    // Secrets Manager für API Keys (nur Production)
+    // Secrets Manager für API Keys (nur Production
     let apiSecret: secretsmanager.Secret | undefined;
     if (!props.isPreview) {
       apiSecret = new secretsmanager.Secret(this, 'ApiSecret', {
