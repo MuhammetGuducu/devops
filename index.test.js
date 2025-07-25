@@ -18,7 +18,7 @@ describe('GET /trace - Trace-Route', () => {
   });
 });
 
-// Test für Secret-Route (lokal erwartet: Fehler)
+// Test für Secret-Route (lokal erwartet: Fehler) 
 describe('GET /secret - Secret-Route', () => {
   it('Antwortet mit Status 500, wenn Secret fehlt', async () => {
     const response = await request(app).get('/secret');
