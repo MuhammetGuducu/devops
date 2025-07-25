@@ -31,7 +31,7 @@ jobs:
         with:
           node-version: '22'
 
-      # Build & Test nur wenn PR nicht geschlossen
+      # Build & Test nur wenn PR nicht geschlossen2
       - name: App-Tests ausführen
         if: github.event.action != 'closed'
         run: |
@@ -42,17 +42,6 @@ jobs:
         if: github.event.action != 'closed'
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-
-      - name: CDK Stack deployen
-        if: github.event.action != 'closed'
-        working-directory: ./infra
-        run: |
-          npm ci
-          npm run build
-          npx cdk deploy \
-            --context pr_number=${{ github.event.number }} \
-            --require-approval never \
-            --outputs-file ../cdk-outputs.json
 
       - name: Docker-Image bauen & pushen
         if: github.event.action != 'closed'
@@ -67,6 +56,17 @@ jobs:
             -t $ECR_URI:pr-${{ github.event.number }} .
           
           docker push $ECR_URI:pr-${{ github.event.number }}
+
+      - name: CDK Stack deployen
+        if: github.event.action != 'closed'
+        working-directory: ./infra
+        run: |
+          npm ci
+          npm run build
+          npx cdk deploy \
+            --context pr_number=${{ github.event.number }} \
+            --require-approval never \
+            --outputs-file ../cdk-outputs.json
 
       - name: Auf App Runner Deployment warten
         if: github.event.action != 'closed'
