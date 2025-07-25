@@ -113,9 +113,29 @@ app.get('/', (req, res) => {
 
 
 // Fehlerhafte Version für Test Rollback bei Fehlern
-app.get('/health', (req, res) => {
-  console.log('🚨 Provoking intentional health check failure!');
-  res.status(500).json({ status: 'unhealthy', error: 'Intentional failure for rollback test' });
+// index.js - Fehlerhafte Version mit AWS SDK-Aufruf
+app.get('/health', async (req, res) => {
+  // Versuche, auf einen AWS-Dienst zuzugreifen, für den keine Berechtigung besteht.
+  // Dies schlägt in App Runner fehl, aber nicht im lokalen Test.
+  const client = new SecretsManagerClient({ region: process.env.AWS_REGION || 'eu-central-1' });
+  const command = new GetSecretValueCommand({ SecretId: "secret-that-does-not-exist-for-test" });
+
+  try {
+    // Dieser Aufruf wird in AWS einen "AccessDeniedException" Fehler werfen.
+    await client.send(command);
+
+    // Dieser Teil wird nie erreicht, ist aber für die Logik vollständig.
+    const uptime = Math.floor((Date.now() - deploymentInfo.startupTime) / 1000);
+    res.json({ status: 'healthy', uptime: `${uptime} seconds` });
+
+  } catch (error) {
+    console.error("🚨 Intentional AWS SDK failure:", error.name); // Gibt z.B. 'AccessDeniedException' aus
+    res.status(503).json({
+      status: 'unhealthy',
+      reason: 'Failed to access a required AWS resource.',
+      errorName: error.name
+    });
+  }
 });
 
 /*
