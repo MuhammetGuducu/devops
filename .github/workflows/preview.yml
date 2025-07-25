@@ -5,9 +5,9 @@ on:
     types: [opened, synchronize, closed]
 
 permissions:
-  id-token: write      # Für AWS-Authentifizierung
-  contents: read       # Für Code-Checkout
-  pull-requests: write # Um Kommentare im PR zu posten
+  id-token: write
+  contents: read
+  pull-requests: write
 
 env:
   AWS_REGION: eu-central-1
@@ -30,46 +30,30 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'npm'
-
-      - name: AWS CDK global installieren
-        run: |
-          npm install -g aws-cdk@2.171.0
-          cdk --version
 
       # Build & Test nur wenn PR nicht geschlossen
-      - name: App-Abhängigkeiten installieren
-        if: github.event.action != 'closed'
-        run: npm ci
-
       - name: App-Tests ausführen
         if: github.event.action != 'closed'
-        run: npm test
+        run: |
+          npm ci
+          npm test
 
       - name: Bei Amazon ECR anmelden
         if: github.event.action != 'closed'
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: CDK-Abhängigkeiten installieren
-        working-directory: ./infra
-        run: npm ci
-
-      - name: CDK Build
-        working-directory: ./infra
-        run: npm run build
-
-      # Deploy Preview Stack
-      - name: Vorschau-Stack deployen
+      - name: CDK Stack deployen
         if: github.event.action != 'closed'
         working-directory: ./infra
         run: |
+          npm ci
+          npm run build
           npx cdk deploy \
             --context pr_number=${{ github.event.number }} \
             --require-approval never \
             --outputs-file ../cdk-outputs.json
 
-      # Docker Image bauen und pushen
       - name: Docker-Image bauen & pushen
         if: github.event.action != 'closed'
         run: |
@@ -84,69 +68,47 @@ jobs:
           
           docker push $ECR_URI:pr-${{ github.event.number }}
 
-      # Warte auf App Runner Deployment
       - name: Auf App Runner Deployment warten
         if: github.event.action != 'closed'
         run: |
           echo "⏳ Warte 90 Sekunden auf App Runner Deployment..."
           sleep 90
 
-      - name: Vorschau-URL auslesen
+      - name: Service Status prüfen
         if: github.event.action != 'closed'
-        id: get-url
         run: |
-          PREVIEW_URL=$(jq -r '.["BachelorPreviewStack-PR${{ github.event.number }}"].ServiceURL' cdk-outputs.json)
-          echo "preview_url=$PREVIEW_URL" >> $GITHUB_OUTPUT
-
-      - name: Kommentar finden
-        if: github.event.action != 'closed'
-        uses: peter-evans/find-comment@v3
-        id: fc
-        with:
-          issue-number: ${{ github.event.number }}
-          comment-author: 'github-actions[bot]'
-          body-includes: '🚀 Preview Environment'
+          SERVICE_ARN=$(aws apprunner list-services \
+            --query "ServiceSummaryList[?ServiceName=='devops-demo-preview-pr-${{ github.event.number }}'].ServiceArn" \
+            --output text)
+          
+          if [ -n "$SERVICE_ARN" ]; then
+            STATUS=$(aws apprunner describe-service \
+              --service-arn $SERVICE_ARN \
+              --query "Service.Status" \
+              --output text)
+            echo "Service Status: $STATUS"
+          fi
 
       - name: URL im Pull Request posten
         if: github.event.action != 'closed'
         uses: peter-evans/create-or-update-comment@v4
         with:
-          comment-id: ${{ steps.fc.outputs.comment-id }}
           issue-number: ${{ github.event.number }}
-          edit-mode: replace
           body: |
             ## 🚀 Preview Environment
             
             **Status:** ✅ Bereit  
-            **URL:** ${{ steps.get-url.outputs.preview_url }}  
+            **URL:** $(jq -r '.["BachelorPreviewStack-PR${{ github.event.number }}"].ServiceURL' cdk-outputs.json)
             **Version:** preview-pr${{ github.event.number }}  
-            **Commit:** `${{ github.sha }}`
             
-            ### Test-Endpunkte:
-            - [Hauptseite](${{ steps.get-url.outputs.preview_url }}/)
-            - [Health Check](${{ steps.get-url.outputs.preview_url }}/health)
-            - [Metriken](${{ steps.get-url.outputs.preview_url }}/metrics)
-            - [Deployment Info](${{ steps.get-url.outputs.preview_url }}/deployment)
-            - [Feature Flags](${{ steps.get-url.outputs.preview_url }}/feature-flags)
-            
-            ---
-            *Diese Umgebung wird automatisch gelöscht, wenn der PR geschlossen wird.*
+            Die Preview-Umgebung wird automatisch gelöscht, wenn der PR geschlossen wird.
 
-      - name: Vorschau-Stack zerstören
+      - name: Stack zerstören
         if: github.event.action == 'closed'
         working-directory: ./infra
         run: |
+          npm ci
+          npm run build
           npx cdk destroy \
             --context pr_number=${{ github.event.number }} \
             --force
-
-      - name: Abschluss-Kommentar
-        if: github.event.action == 'closed'
-        uses: peter-evans/create-or-update-comment@v4
-        with:
-          issue-number: ${{ github.event.number }}
-          body: |
-            ## 🗑️ Preview Environment
-            
-            **Status:** ❌ Gelöscht  
-            Die Preview-Umgebung für PR #${{ github.event.number }} wurde erfolgreich entfernt.

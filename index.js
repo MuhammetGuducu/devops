@@ -26,11 +26,13 @@ const metrics = {
   }
 };
 
-// Cache für Feature Flags (simuliert externe Config)
+// Cache für Feature Flags
 const featureCache = new NodeCache({ stdTTL: 60 });
 
-// X-Ray für App Runner konfigurieren
-if (process.env._AWS_XRAY_DAEMON_ADDRESS) {
+// X-Ray nur in Production aktivieren
+const isXRayEnabled = process.env._AWS_XRAY_DAEMON_ADDRESS && process.env.NODE_ENV !== 'test';
+
+if (isXRayEnabled) {
   AWSXRay.enableManualMode();
   app.use(AWSXRay.express.openSegment('DevOps-Demo-Service'));
 }
@@ -173,7 +175,15 @@ app.get('/metrics', (req, res) => {
 
 // X-Ray Trace Demo
 app.get('/trace', (req, res) => {
-  const segment = AWSXRay.getSegment();
+  // Safe X-Ray handling
+  let segment = null;
+  try {
+    if (isXRayEnabled) {
+      segment = AWSXRay.getSegment();
+    }
+  } catch (err) {
+    // X-Ray nicht verfügbar, ignorieren
+  }
   
   const processData = (callback) => {
     if (segment) {
@@ -198,14 +208,13 @@ app.get('/trace', (req, res) => {
       message: 'Trace erfolgreich erstellt',
       traceEnabled: !!segment,
       environment: deploymentInfo.environment,
-      tip: 'Prüfe AWS X-Ray Console für detaillierte Traces'
+      tip: segment ? 'Prüfe AWS X-Ray Console für detaillierte Traces' : 'X-Ray ist nur in Production verfügbar'
     });
   });
 });
 
 // Feature Flags Endpoint
 app.get('/feature-flags', (req, res) => {
-  // Simuliert Feature Flag Service
   const flags = {
     newDashboard: featureCache.get('newDashboard') ?? false,
     enhancedMetrics: featureCache.get('enhancedMetrics') ?? true,
@@ -242,7 +251,6 @@ app.get('/chaos', (req, res) => {
   
   switch (scenario) {
     case 'slow':
-      // Simuliert langsame Response
       setTimeout(() => {
         res.json({ 
           scenario: 'slow', 
@@ -253,7 +261,6 @@ app.get('/chaos', (req, res) => {
       break;
       
     case 'error':
-      // Simuliert zufälligen Fehler
       metrics.errors++;
       res.status(500).json({ 
         scenario: 'error',
@@ -262,7 +269,6 @@ app.get('/chaos', (req, res) => {
       break;
       
     case 'memory':
-      // Simuliert Memory Spike
       const data = new Array(1000000).fill('memory test');
       res.json({ 
         scenario: 'memory',
@@ -292,7 +298,7 @@ app.get('/config', (req, res) => {
     features: metrics.featureFlags,
     aws: {
       region: process.env.AWS_REGION || 'eu-central-1',
-      xrayEnabled: !!process.env._AWS_XRAY_DAEMON_ADDRESS,
+      xrayEnabled: isXRayEnabled,
       secretsEnabled: !!process.env.API_KEY
     },
     runtime: {
@@ -302,7 +308,6 @@ app.get('/config', (req, res) => {
     }
   };
   
-  // Secret nur andeuten, nicht vollständig anzeigen
   if (process.env.API_KEY) {
     config.aws.secretPreview = process.env.API_KEY.substring(0, 4) + '...';
   }
@@ -310,7 +315,7 @@ app.get('/config', (req, res) => {
   res.json(config);
 });
 
-// Webhook Endpoint für CI/CD Events
+// Webhook Endpoint
 app.post('/webhook', (req, res) => {
   console.log('Webhook received:', req.body);
   res.json({
@@ -345,7 +350,7 @@ app.use((err, req, res, next) => {
 });
 
 // X-Ray Segment schließen
-if (process.env._AWS_XRAY_DAEMON_ADDRESS) {
+if (isXRayEnabled) {
   app.use(AWSXRay.express.closeSegment());
 }
 

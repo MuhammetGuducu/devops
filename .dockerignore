@@ -6,5 +6,9 @@ Dockerfile
 infra/
 .github/
 reports/
-*.test.js
 README.md
+*.log
+.env
+coverage/
+.vscode/
+.idea/

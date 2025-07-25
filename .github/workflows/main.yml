@@ -5,13 +5,13 @@ on:
     branches: [ "main" ]
 
 permissions:
-  id-token: write      # Für AWS-Authentifizierung
-  contents: read       # Für Code-Checkout
-  security-events: write # Für Trivy-Scan-Upload
+  id-token: write
+  contents: read
+  security-events: write
 
 env:
   AWS_REGION: eu-central-1
-  ECR_REPOSITORY: devops-demo-repo
+  ECR_REPOSITORY: bachelor-app-repo
 
 jobs:
   build-and-scan:
@@ -34,12 +34,18 @@ jobs:
         run: |
           VERSION="1.0.${{ github.run_number }}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Generated version: $VERSION"
 
       - name: Abhängigkeiten installieren
-        run: npm ci
+        run: |
+          npm ci
+          echo "Dependencies installed successfully"
 
       - name: Tests ausführen
-        run: npm test
+        run: |
+          echo "Running tests..."
+          npm test
+          echo "Tests completed"
 
       - name: Test-Reports hochladen
         uses: actions/upload-artifact@v4
@@ -52,24 +58,37 @@ jobs:
       - name: Docker-Image bauen
         id: build-image
         run: |
+          echo "Building Docker image..."
           docker build \
             --build-arg VERSION=${{ steps.version.outputs.version }} \
             --build-arg COMMIT_SHA=${{ github.sha }} \
-            -t devops-demo:${{ github.sha }} .
-          echo "image_tag=devops-demo:${{ github.sha }}" >> $GITHUB_OUTPUT
+            -t bachelor-app:${{ github.sha }} \
+            -t bachelor-app:latest .
+          echo "Docker build completed"
+          echo "image_tag=bachelor-app:${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      - name: Container testen
+        run: |
+          echo "Testing container..."
+          docker run -d --name test-container -p 8080:8080 bachelor-app:latest
+          sleep 5
+          curl -f http://localhost:8080/health || exit 1
+          docker stop test-container
+          docker rm test-container
+          echo "Container test successful"
 
       - name: Trivy Vulnerability Scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: '${{ steps.build-image.outputs.image_tag }}'
+          image-ref: 'bachelor-app:${{ github.sha }}'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
-          exit-code: '0'  # Nicht bei Vulnerabilities fehlschlagen
+          exit-code: '0'
 
       - name: Trivy-Ergebnisse hochladen
         uses: github/codeql-action/upload-sarif@v3
-        if: always() && hashFiles('trivy-results.sarif') != ''
+        if: always()
         with:
           sarif_file: 'trivy-results.sarif'
 
@@ -97,47 +116,44 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           VERSION: ${{ needs.build-and-scan.outputs.version }}
         run: |
-          # Image mit Build-Args bauen
+          echo "Building production image..."
           docker build \
             --build-arg VERSION=$VERSION \
             --build-arg COMMIT_SHA=${{ github.sha }} \
             -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest \
-            -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ github.sha }} .
+            -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ github.sha }} \
+            -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:v$VERSION .
           
-          # Beide Tags pushen
+          echo "Pushing images to ECR..."
           docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
           docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:v$VERSION
+          echo "Push completed"
 
       - name: Node.js für CDK einrichten
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: infra/package-lock.json
 
-      - name: AWS CDK installieren
-        run: |
-          npm install -g aws-cdk@2.171.0
-          cdk --version
-
-      - name: CDK-Abhängigkeiten installieren
-        working-directory: ./infra
-        run: npm ci
-
-      - name: CDK Build
-        working-directory: ./infra
-        run: npm run build
-
-      - name: CDK Deploy
+      - name: CDK installieren und deployen
         working-directory: ./infra
         env:
           APP_VERSION: ${{ needs.build-and-scan.outputs.version }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
+          echo "Installing CDK dependencies..."
+          npm ci
+          
+          echo "Building TypeScript..."
+          npm run build
+          
+          echo "Deploying CDK stack..."
           npx cdk deploy \
             --require-approval never \
             --context appVersion=$APP_VERSION \
             --context commitSha=$COMMIT_SHA
+          
+          echo "Deployment completed"
 
       - name: Service URL ausgeben
         run: |
