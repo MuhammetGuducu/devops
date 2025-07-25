@@ -1,5 +1,5 @@
 # Stage 1: Build & Test
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 
 # Build-Argumente definieren
 ARG VERSION=1.0.0
@@ -20,7 +20,7 @@ COPY index.js index.test.js ./
 RUN npm test
 
 # Stage 2: Production
-FROM node:18-alpine
+FROM node:22-alpine
 
 # Build-Argumente wieder definieren für diese Stage
 ARG VERSION=1.0.0
@@ -53,6 +53,7 @@ USER nodejs
 # Umgebungsvariablen setzen
 ENV APP_VERSION=${VERSION}
 ENV COMMIT_SHA=${COMMIT_SHA}
+ENV NODE_ENV=production
 
 # Health Check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

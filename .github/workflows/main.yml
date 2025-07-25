@@ -26,7 +26,7 @@ jobs:
       - name: Node.js einrichten
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'
           cache: 'npm'
 
       - name: Version generieren
@@ -111,6 +111,11 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: ECR Repository erstellen (falls nicht vorhanden)
+        run: |
+          aws ecr describe-repositories --repository-names ${{ env.ECR_REPOSITORY }} --region ${{ env.AWS_REGION }} || \
+          aws ecr create-repository --repository-name ${{ env.ECR_REPOSITORY }} --region ${{ env.AWS_REGION }}
+
       - name: Docker-Image bauen & nach ECR pushen
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -133,7 +138,7 @@ jobs:
       - name: Node.js für CDK einrichten
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'
 
       - name: CDK installieren und deployen
         working-directory: ./infra

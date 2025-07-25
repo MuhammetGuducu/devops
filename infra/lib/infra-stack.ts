@@ -18,32 +18,33 @@ export class InfraStack extends cdk.Stack {
     super(scope, id, props);
 
     const serviceName = props.isPreview ? 
-      `devops-demo-preview-pr-${props.prNumber}` : 'devops-demo-service';
+      `bachelor-preview-pr-${props.prNumber}` : 'bachelor-rest-api';
     const repoName = props.isPreview ? 
-      `devops-demo-preview-repo-pr-${props.prNumber}` : 'devops-demo-repo';
+      `bachelor-preview-repo-pr-${props.prNumber}` : 'bachelor-app-repo';  // WICHTIG: Gleicher Name wie in GitHub Actions
 
-    // ECR Repository mit erweiterten Tags
-    const repo = new ecr.Repository(this, 'AppRepository', {
-      repositoryName: repoName,
-      removalPolicy: props.isPreview ? cdk.RemovalPolicy.DESTROY : cdk.RemovalPolicy.RETAIN,
-      emptyOnDelete: props.isPreview,
-      imageScanOnPush: true,
-      imageTagMutability: ecr.TagMutability.MUTABLE,
-      lifecycleRules: [{
-        description: 'Behalte nur die neuesten Images',
-        maxImageCount: props.isPreview ? 3 : 20,
-        rulePriority: 1
-      }]
-    });
+    // ECR Repository - verwende bestehende wenn möglich
+    const repo = ecr.Repository.fromRepositoryName(this, 'AppRepository', repoName) as ecr.Repository || 
+      new ecr.Repository(this, 'AppRepository', {
+        repositoryName: repoName,
+        removalPolicy: props.isPreview ? cdk.RemovalPolicy.DESTROY : cdk.RemovalPolicy.RETAIN,
+        emptyOnDelete: props.isPreview,
+        imageScanOnPush: true,
+        imageTagMutability: ecr.TagMutability.MUTABLE,
+        lifecycleRules: [{
+          description: 'Behalte nur die neuesten Images',
+          maxImageCount: props.isPreview ? 3 : 20,
+          rulePriority: 1
+        }]
+      });
 
     // Tags für bessere Organisation
     cdk.Tags.of(repo).add('Project', 'Bachelor-DevOps');
     cdk.Tags.of(repo).add('Environment', props.isPreview ? 'preview' : 'production');
 
-    // IAM-Rolle für App Runner mit erweiterten Berechtigungen
+    // IAM-Rolle für App Runner
     const apprunnerInstanceRole = new iam.Role(this, 'AppRunnerInstanceRole', {
       assumedBy: new iam.ServicePrincipal('tasks.apprunner.amazonaws.com'),
-      description: 'Rolle für DevOps Demo Service in App Runner',
+      description: 'Rolle für Bachelor Demo Service in App Runner',
     });
 
     // Berechtigungen
@@ -54,19 +55,19 @@ export class InfraStack extends cdk.Stack {
       iam.ManagedPolicy.fromAwsManagedPolicyName('CloudWatchLogsFullAccess')
     );
 
-    // X-Ray Observability Configuration
+    // X-Ray Observability Configuration (nur Production)
     const observability = props.isPreview ? undefined : 
       new apprunner.ObservabilityConfiguration(this, 'ObservabilityConfig', {
         observabilityConfigurationName: `${serviceName}-xray`,
         traceConfigurationVendor: apprunner.TraceConfigurationVendor.AWSXRAY
       });
 
-    // Secrets Manager für API Keys
+    // Secrets Manager für API Keys (nur Production)
     let apiSecret: secretsmanager.Secret | undefined;
     if (!props.isPreview) {
       apiSecret = new secretsmanager.Secret(this, 'ApiSecret', {
         secretName: `${serviceName}/api-key`,
-        description: 'API Key für DevOps Demo Service',
+        description: 'API Key für Bachelor Demo Service',
         generateSecretString: {
           secretStringTemplate: JSON.stringify({ 
             apiKey: 'DEMO-KEY',
@@ -88,7 +89,7 @@ export class InfraStack extends cdk.Stack {
       SERVICE_NAME: serviceName,
     };
 
-    // Version und Commit SHA hinzufügen wenn verfügbar
+    // Version und Commit SHA hinzufügen
     if (props.appVersion) {
       environmentVariables.APP_VERSION = props.appVersion;
     }
@@ -96,13 +97,13 @@ export class InfraStack extends cdk.Stack {
       environmentVariables.COMMIT_SHA = props.commitSha;
     }
 
-    // Feature Flags für Demo
+    // Feature Flags
     if (!props.isPreview) {
       environmentVariables.NEW_FEATURE = 'true';
       environmentVariables.DEBUG_MODE = 'false';
     }
 
-    // App Runner Service mit erweiterten Konfigurationen
+    // App Runner Service
     const service = new apprunner.Service(this, 'AppRunnerService', {
       serviceName: serviceName,
       source: apprunner.Source.fromEcr({
@@ -120,14 +121,14 @@ export class InfraStack extends cdk.Stack {
       observabilityConfiguration: observability,
       healthCheck: apprunner.HealthCheck.http({
         path: '/health',
-        interval: cdk.Duration.seconds(10),
-        timeout: cdk.Duration.seconds(5),
-        healthyThreshold: 1,
-        unhealthyThreshold: 3,
+        interval: cdk.Duration.seconds(20),
+        timeout: cdk.Duration.seconds(10),
+        healthyThreshold: 2,
+        unhealthyThreshold: 5,
       }),
       cpu: apprunner.Cpu.QUARTER_VCPU,
       memory: apprunner.Memory.HALF_GB,
-      autoDeploymentsEnabled: !props.isPreview,
+      autoDeploymentsEnabled: false, // Manuelles Deployment
     });
 
     // CloudWatch Dashboard (nur Production)
@@ -136,7 +137,7 @@ export class InfraStack extends cdk.Stack {
         dashboardName: `${serviceName}-dashboard`,
         widgets: [[
           new cloudwatch.TextWidget({
-            markdown: `# DevOps Demo Service Dashboard\n\n**Environment:** Production\n**Region:** ${this.region}`,
+            markdown: `# Bachelor DevOps Demo Dashboard\n\n**Environment:** Production\n**Region:** ${this.region}`,
             width: 24,
             height: 2
           })
