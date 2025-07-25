@@ -43,14 +43,23 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: ECR Repository sicherstellen
+        if: github.event.action != 'closed'
+        run: |
+          # Check if repository exists, create if not
+          aws ecr describe-repositories \
+              --repository-names devops-demo-preview-shared \
+              --region ${{ env.AWS_REGION }} 2>/dev/null || \
+          aws ecr create-repository \
+              --repository-name devops-demo-preview-shared \
+              --region ${{ env.AWS_REGION }}
+
       - name: Docker-Image bauen & pushen
         if: github.event.action != 'closed'
         run: |
-          # Use a pre-existing shared ECR repository
           ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
-          ECR_REPOSITORY="devops-demo-preview-shared"  # Shared repository name
+          ECR_REPOSITORY="devops-demo-preview-shared"
           
-          # Build and push image with PR-specific tag
           docker build \
             --build-arg VERSION="preview-pr${{ github.event.number }}" \
             --build-arg COMMIT_SHA=${{ github.sha }} \
