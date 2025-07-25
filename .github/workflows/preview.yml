@@ -46,16 +46,17 @@ jobs:
       - name: Docker-Image bauen & pushen
         if: github.event.action != 'closed'
         run: |
-          # ECR URI aus CDK Output lesen
-          ECR_URI=$(jq -r '.["BachelorPreviewStack-PR${{ github.event.number }}"].ECRRepositoryURI' cdk-outputs.json)
+          # Use a pre-existing shared ECR repository
+          ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          ECR_REPOSITORY="devops-demo-preview-shared"  # Shared repository name
           
-          # Image bauen und pushen
+          # Build and push image with PR-specific tag
           docker build \
             --build-arg VERSION="preview-pr${{ github.event.number }}" \
             --build-arg COMMIT_SHA=${{ github.sha }} \
-            -t $ECR_URI:pr-${{ github.event.number }} .
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:pr-${{ github.event.number }} .
           
-          docker push $ECR_URI:pr-${{ github.event.number }}
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:pr-${{ github.event.number }}
 
       - name: CDK Stack deployen
         if: github.event.action != 'closed'
@@ -65,6 +66,8 @@ jobs:
           npm run build
           npx cdk deploy \
             --context pr_number=${{ github.event.number }} \
+            --context ecr_repository=$ECR_REPOSITORY \
+            --context image_tag=pr-${{ github.event.number }} \
             --require-approval never \
             --outputs-file ../cdk-outputs.json
 
