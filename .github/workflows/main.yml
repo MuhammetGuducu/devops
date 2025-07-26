@@ -26,7 +26,7 @@ jobs:
       - name: Node.js einrichten
         uses: actions/setup-node@v4
         with:
-          node-version: '20'  # Update auf Node 20
+          node-version: '20'
           cache: 'npm'
 
       - name: Version generieren
@@ -138,7 +138,7 @@ jobs:
       - name: Node.js für CDK einrichten
         uses: actions/setup-node@v4
         with:
-          node-version: '20'  # Update auf Node 20
+          node-version: '20'
 
       - name: CDK installieren und deployen
         working-directory: ./infra
