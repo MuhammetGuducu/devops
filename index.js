@@ -1,4 +1,4 @@
-// index.js - DevOps Demo Service
+// index.js DevOps Demo Service
 const express = require('express');
 const AWSXRay = require('aws-xray-sdk-core');
 const NodeCache = require('node-cache');
@@ -124,7 +124,7 @@ app.get('/health', (req, res) => {
     version: deploymentInfo.version,
     checks: {
       memory: process.memoryUsage().heapUsed < 500 * 1024 * 1024 ? 'ok' : 'warning',
-      responseTime: metrics.responseTimes.length > 0 ? 
+      responseTime: metrics.responseTimes.length > 0 ?
         Math.floor(metrics.responseTimes.reduce((a, b) => a + b, 0) / metrics.responseTimes.length) + 'ms' : 'N/A'
     }
   };

@@ -108,7 +108,7 @@ export class InfraStack extends cdk.Stack {
 
     // App Runner Service Definition
     const service = new apprunner.Service(this, 'AppRunnerService', {
-      serviceName: serviceName, // ✅ Correctly uses the dynamic/static service name
+      serviceName: serviceName,
       source: apprunner.Source.fromEcr({
         repository: repo,
         tagOrDigest: props.isPreview ? `pr-${props.prNumber}` : 'latest',
@@ -135,7 +135,7 @@ export class InfraStack extends cdk.Stack {
       autoDeploymentsEnabled: false,
     });
 
-    // CloudWatch Dashboard (only for Production)
+    // CloudWatch Dashboard (only Production)
     if (!props.isPreview) {
       new cloudwatch.Dashboard(this, 'ServiceDashboard', {
         dashboardName: `${serviceName}-dashboard`,
@@ -167,7 +167,6 @@ export class InfraStack extends cdk.Stack {
       description: 'App Runner Service ARN',
     });
 
-    // Stack Tags for organization and cost tracking
     cdk.Tags.of(this).add('Project', 'Bachelor-DevOps-Demo');
     cdk.Tags.of(this).add('ManagedBy', 'CDK');
     cdk.Tags.of(this).add('Environment', props.isPreview ? 'preview' : 'production');
