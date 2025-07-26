@@ -97,14 +97,14 @@ app.get('/', (req, res) => {
         <div class="info">
           <h3>DevOps Features Demonstrated:</h3>
           <ul>
-            <li>✅ Automated CI/CD Pipeline</li>
-            <li>✅ Infrastructure as Code (AWS CDK)</li>
-            <li>✅ Container-based Deployment</li>
-            <li>✅ Automated Testing & Security Scanning</li>
-            <li>✅ Feature Flags & Dynamic Configuration</li>
-            <li>✅ Observability (Metrics, Traces, Logs)</li>
-            <li>✅ Preview Environments for PRs</li>
-            <li>✅ Blue/Green Deployments</li>
+            <li>Automated CI/CD Pipeline</li>
+            <li>Infrastructure as Code (AWS CDK)</li>
+            <li>Container-based Deployment</li>
+            <li>Automated Testing & Security Scanning</li>
+            <li>Feature Flags & Dynamic Configuration</li>
+            <li>Observability (Metrics, Traces, Logs)</li>
+            <li>Preview Environments for PRs</li>
+            <li>Blue/Green Deployments</li>
           </ul>
         </div>
       </body>
@@ -124,7 +124,7 @@ app.get('/health', (req, res) => {
     version: deploymentInfo.version,
     checks: {
       memory: process.memoryUsage().heapUsed < 500 * 1024 * 1024 ? 'ok' : 'warning',
-      responseTime: metrics.responseTimes.length > 0 ? 
+      responseTime: metrics.responseTimes.length > 0 ?
         Math.floor(metrics.responseTimes.reduce((a, b) => a + b, 0) / metrics.responseTimes.length) + 'ms' : 'N/A'
     }
   };
