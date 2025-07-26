@@ -17,17 +17,17 @@ export class InfraStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: InfraStackProps) {
     super(scope, id, props);
 
+    // ✅ This correctly sets a dynamic name for previews and a static name for production.
     const serviceName = props.isPreview ?
       `bachelor-preview-pr-${props.prNumber}` : 'bachelor-rest-api';
 
-    // CRITICAL FIX: Use shared repository for preview environments
     const repoName = props.isPreview ?
       'devops-demo-preview-shared' : 'bachelor-app-repo';
 
-    // Reference existing repository - don't create new ones
+    // Reference existing repository
     const repo = ecr.Repository.fromRepositoryName(this, 'AppRepository', repoName);
 
-    // App Runner Access Role with proper ECR permissions
+    // App Runner Access Role to pull images from ECR
     const appRunnerAccessRole = new iam.Role(this, 'AppRunnerAccessRole', {
       assumedBy: new iam.ServicePrincipal('build.apprunner.amazonaws.com'),
       description: 'Access role for App Runner to pull images from ECR',
@@ -50,13 +50,13 @@ export class InfraStack extends cdk.Stack {
       }
     });
 
-    // IAM-Rolle für App Runner Instance
+    // IAM Role for the App Runner Instance itself
     const apprunnerInstanceRole = new iam.Role(this, 'AppRunnerInstanceRole', {
       assumedBy: new iam.ServicePrincipal('tasks.apprunner.amazonaws.com'),
       description: 'Rolle für Bachelor Demo Service in App Runner',
     });
 
-    // Berechtigungen
+    // Add necessary permissions to the instance role
     apprunnerInstanceRole.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName('AWSXRayDaemonWriteAccess')
     );
@@ -64,14 +64,14 @@ export class InfraStack extends cdk.Stack {
       iam.ManagedPolicy.fromAwsManagedPolicyName('CloudWatchLogsFullAccess')
     );
 
-    // X-Ray Observability Configuration (nur Production)
+    // X-Ray Observability Configuration (only for Production)
     const observability = props.isPreview ? undefined :
       new apprunner.ObservabilityConfiguration(this, 'ObservabilityConfig', {
         observabilityConfigurationName: `${serviceName}-xray`,
         traceConfigurationVendor: apprunner.TraceConfigurationVendor.AWSXRAY
       });
 
-    // Secrets Manager für API Keys (nur Production)
+    // Secrets Manager for API Keys (only for Production)
     let apiSecret: secretsmanager.Secret | undefined;
     if (!props.isPreview) {
       apiSecret = new secretsmanager.Secret(this, 'ApiSecret', {
@@ -91,30 +91,24 @@ export class InfraStack extends cdk.Stack {
       apiSecret.grantRead(apprunnerInstanceRole);
     }
 
-    // Umgebungsvariablen
+    // Environment variables to be passed to the container
     const environmentVariables: { [key: string]: string } = {
       NODE_ENV: props.isPreview ? 'preview' : 'production',
       AWS_REGION: this.region,
       SERVICE_NAME: serviceName,
+      COMMIT_SHA: props.commitSha || 'local', // Forces deployment on every commit
     };
-
-    // Version und Commit SHA hinzufügen
     if (props.appVersion) {
       environmentVariables.APP_VERSION = props.appVersion;
     }
-    if (props.commitSha) {
-      environmentVariables.COMMIT_SHA = props.commitSha;
-    }
-
-    // Feature Flags
     if (!props.isPreview) {
       environmentVariables.NEW_FEATURE = 'true';
       environmentVariables.DEBUG_MODE = 'false';
     }
 
-    // App Runner Service mit korrekter Konfiguration
+    // App Runner Service Definition
     const service = new apprunner.Service(this, 'AppRunnerService', {
-      serviceName: `devops-demo-preview-pr-${props.prNumber}`,
+      serviceName: serviceName, // ✅ Correctly uses the dynamic/static service name
       source: apprunner.Source.fromEcr({
         repository: repo,
         tagOrDigest: props.isPreview ? `pr-${props.prNumber}` : 'latest',
@@ -141,9 +135,9 @@ export class InfraStack extends cdk.Stack {
       autoDeploymentsEnabled: false,
     });
 
-    // CloudWatch Dashboard (nur Production)
+    // CloudWatch Dashboard (only for Production)
     if (!props.isPreview) {
-      const dashboard = new cloudwatch.Dashboard(this, 'ServiceDashboard', {
+      new cloudwatch.Dashboard(this, 'ServiceDashboard', {
         dashboardName: `${serviceName}-dashboard`,
         widgets: [[
           new cloudwatch.TextWidget({
@@ -155,7 +149,7 @@ export class InfraStack extends cdk.Stack {
       });
     }
 
-    // Outputs
+    // CloudFormation Outputs
     new cdk.CfnOutput(this, 'ServiceURL', {
       value: `https://${service.serviceUrl}`,
       description: props.isPreview ? 'Preview Environment URL' : 'Production Service URL',
@@ -168,14 +162,12 @@ export class InfraStack extends cdk.Stack {
       exportName: `${serviceName}-ecr-uri`,
     });
 
-
-
     new cdk.CfnOutput(this, 'ServiceARN', {
       value: service.serviceArn,
       description: 'App Runner Service ARN',
     });
 
-    // Stack Tags
+    // Stack Tags for organization and cost tracking
     cdk.Tags.of(this).add('Project', 'Bachelor-DevOps-Demo');
     cdk.Tags.of(this).add('ManagedBy', 'CDK');
     cdk.Tags.of(this).add('Environment', props.isPreview ? 'preview' : 'production');
