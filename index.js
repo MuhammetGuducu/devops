@@ -1,4 +1,4 @@
-// index.js - DevOps Demo Service
+// index.js DevOps Demo Service
 const express = require('express');
 const AWSXRay = require('aws-xray-sdk-core');
 const NodeCache = require('node-cache');
