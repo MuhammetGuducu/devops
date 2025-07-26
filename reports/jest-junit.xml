@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="jest tests" tests="13" failures="0" errors="0" time="2.685">
-  <testsuite name="GET / - Hauptseite" errors="0" failures="0" skipped="0" timestamp="2025-07-25T12:33:44" time="2.642" tests="13">
-    <testcase classname="GET / - Hauptseite Antwortet mit Status 200 und HTML" name="GET / - Hauptseite Antwortet mit Status 200 und HTML" time="0.015">
+<testsuites name="jest tests" tests="14" failures="0" errors="0" time="3.211">
+  <testsuite name="undefined" errors="0" failures="0" skipped="0" timestamp="2025-07-26T01:21:42" time="0.298" tests="1">
+    <testcase classname=" SQS Queue Created" name=" SQS Queue Created" time="0.004">
+    </testcase>
+  </testsuite>
+  <testsuite name="GET / - Hauptseite" errors="0" failures="0" skipped="0" timestamp="2025-07-26T01:21:42" time="3.015" tests="13">
+    <testcase classname="GET / - Hauptseite Antwortet mit Status 200 und HTML" name="GET / - Hauptseite Antwortet mit Status 200 und HTML" time="0.014">
     </testcase>
     <testcase classname="GET /health - Health Check Antwortet mit Status 200 und JSON" name="GET /health - Health Check Antwortet mit Status 200 und JSON" time="0.003">
     </testcase>
@@ -9,21 +13,21 @@
     </testcase>
     <testcase classname="GET /metrics - Service Metriken Antwortet mit Metrik-Daten" name="GET /metrics - Service Metriken Antwortet mit Metrik-Daten" time="0.002">
     </testcase>
-    <testcase classname="GET /trace - Trace Route Antwortet mit Status 200" name="GET /trace - Trace Route Antwortet mit Status 200" time="0.103">
+    <testcase classname="GET /trace - Trace Route Antwortet mit Status 200" name="GET /trace - Trace Route Antwortet mit Status 200" time="0.142">
     </testcase>
-    <testcase classname="GET /feature-flags - Feature Flags Antwortet mit Feature Flag Status" name="GET /feature-flags - Feature Flags Antwortet mit Feature Flag Status" time="0.004">
+    <testcase classname="GET /feature-flags - Feature Flags Antwortet mit Feature Flag Status" name="GET /feature-flags - Feature Flags Antwortet mit Feature Flag Status" time="0.003">
     </testcase>
-    <testcase classname="POST /feature-flags/:flag - Feature Flag Update Aktualisiert ein Feature Flag" name="POST /feature-flags/:flag - Feature Flag Update Aktualisiert ein Feature Flag" time="0.01">
+    <testcase classname="POST /feature-flags/:flag - Feature Flag Update Aktualisiert ein Feature Flag" name="POST /feature-flags/:flag - Feature Flag Update Aktualisiert ein Feature Flag" time="0.009">
     </testcase>
-    <testcase classname="GET /chaos - Chaos Engineering Antwortet mit verfügbaren Szenarien" name="GET /chaos - Chaos Engineering Antwortet mit verfügbaren Szenarien" time="0.005">
+    <testcase classname="GET /chaos - Chaos Engineering Antwortet mit verfügbaren Szenarien" name="GET /chaos - Chaos Engineering Antwortet mit verfügbaren Szenarien" time="0.004">
     </testcase>
     <testcase classname="GET /chaos - Chaos Engineering Simuliert langsame Response" name="GET /chaos - Chaos Engineering Simuliert langsame Response" time="2.009">
     </testcase>
-    <testcase classname="GET /chaos - Chaos Engineering Simuliert Fehler" name="GET /chaos - Chaos Engineering Simuliert Fehler" time="0.002">
+    <testcase classname="GET /chaos - Chaos Engineering Simuliert Fehler" name="GET /chaos - Chaos Engineering Simuliert Fehler" time="0.003">
     </testcase>
     <testcase classname="GET /config - Configuration Antwortet mit Konfigurationsdaten" name="GET /config - Configuration Antwortet mit Konfigurationsdaten" time="0.002">
     </testcase>
-    <testcase classname="POST /webhook - Webhook Endpoint Empfängt Webhook-Daten" name="POST /webhook - Webhook Endpoint Empfängt Webhook-Daten" time="0.012">
+    <testcase classname="POST /webhook - Webhook Endpoint Empfängt Webhook-Daten" name="POST /webhook - Webhook Endpoint Empfängt Webhook-Daten" time="0.006">
     </testcase>
     <testcase classname="404 Handler Antwortet mit 404 für unbekannte Routes" name="404 Handler Antwortet mit 404 für unbekannte Routes" time="0.002">
     </testcase>

@@ -13,7 +13,7 @@ while ($true) {
         }
         $currentDowntime = (Get-Date) - $downtimeStart
         Write-Output "$(Get-Date): FEHLER! Statuscode: $status"
-        Write-Output "Aktuelle Ausfallzeit: $($currentDowntime.ToString('hh\:mm\:ss'))"
+        Write-Output "Ausfallzeit: $($currentDowntime.ToString('hh\:mm\:ss'))"
     }
     else {
         if ($downtimeStart) {
