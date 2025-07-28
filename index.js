@@ -97,7 +97,7 @@ app.get('/', (req, res) => {
             <li>Automated CI/CD Pipeline</li>
             <li>Infrastructure as Code (AWS CDK)</li>
             <li>Container-based Deployment</li>
-            <li>Automated Testing & Security Scanning</li>
+            <li>Automated Testing & Security Scanning (Trivy, Unit Tests)</li>
             <li>Observability (Metrics, Traces, Logs)</li>
             <li>Preview Environments for PRs</li>
           </ul>
