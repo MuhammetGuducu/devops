@@ -104,7 +104,6 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          role-source-account: ${{ secrets.AWS_ACCOUNT_ID }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Bei Amazon ECR anmelden
@@ -140,31 +139,20 @@ jobs:
         with:
           node-version: '20'
 
-      - name: CDK Stack deployen
-        working-directory: ./infra
-        env:
-          APP_VERSION: ${{ needs.build-and-scan.outputs.version }}
-          COMMIT_SHA: ${{ github.sha }}
-          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
-          CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
+      - name: Neues Deployment auf App Runner starten
         run: |
-          echo "Installing CDK dependencies..."
-          npm ci
+          echo "Suche Service ARN für bachelor-rest-api..."
+          SERVICE_ARN=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='bachelor-rest-api'].ServiceArn" --output text)
+
+          if [ -z "$SERVICE_ARN" ]; then
+            echo "Fehler: Service 'bachelor-rest-api' nicht gefunden. Deployment kann nicht gestartet werden."
+            exit 1
+          fi
+
+          echo "Starte neues Deployment für Service $SERVICE_ARN"
+          aws apprunner start-deployment --service-arn $SERVICE_ARN
           
-          echo "Building TypeScript..."
-          npm run build
-          
-          echo "Bootstrapping CDK (if needed)..."
-          npx cdk bootstrap || true
-          
-          echo "Deploying CDK stack..."
-          npx cdk deploy BachelorProdStack \
-            --require-approval never \
-            --context appVersion=$APP_VERSION \
-            --context commitSha=$COMMIT_SHA \
-            --context isPreview=false
-          
-          echo "Deployment completed"
+          echo "Deployment erfolgreich gestartet. Überwache den Status in der AWS Konsole."
 
       - name: Service Status prüfen
         run: |
