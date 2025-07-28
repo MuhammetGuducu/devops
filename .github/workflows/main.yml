@@ -66,15 +66,31 @@ jobs:
             -t bachelor-app:latest .
           echo "Docker build completed"
 
+      # RACE CONDITION vermeiden indem wir warten bis der Container bereit ist
       - name: Container testen
         run: |
           echo "Testing container..."
           docker run -d --name test-container -p 8080:8080 bachelor-app:latest
-          sleep 5
-          curl -f http://localhost:8080/health || exit 1
+          
+          echo "Warte, bis der Container bereit ist..."
+          for i in {1..20}; do
+            # Prüfe den Health-Endpunkt. Bei Erfolg (Status 2xx) ist der Exit-Code 0.
+            if curl -s -f http://localhost:8080/health; then
+              echo "Container ist betriebsbereit!"
+              docker stop test-container
+              docker rm test-container
+              exit 0 # Beendet das Skript erfolgreich
+            fi
+            echo "Versuch $i/20 fehlgeschlagen. Nächster Versuch in 3 Sekunden..."
+            sleep 3
+          done
+
+          echo "Fehler: Container war nicht rechtzeitig betriebsbereit."
+          echo "Container-Logs werden ausgegeben:"
+          docker logs test-container
           docker stop test-container
           docker rm test-container
-          echo "Container test successful"
+          exit 1
 
       - name: Trivy Vulnerability Scan
         uses: aquasecurity/trivy-action@0.28.0
