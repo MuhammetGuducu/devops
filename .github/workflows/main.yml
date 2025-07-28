@@ -69,7 +69,7 @@ jobs:
 
       - name: Container testen
         run: |
-          echo "Testing container..."
+          echo "Testing container.."
           docker run -d --name test-container -p 8080:8080 bachelor-app:latest
           sleep 5
           curl -f http://localhost:8080/health || exit 1
