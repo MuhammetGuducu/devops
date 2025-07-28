@@ -66,31 +66,15 @@ jobs:
             -t bachelor-app:latest .
           echo "Docker build completed"
 
-      # RACE CONDITION vermeiden indem wir warten bis der Container bereit ist
       - name: Container testen
         run: |
           echo "Testing container..."
           docker run -d --name test-container -p 8080:8080 bachelor-app:latest
-          
-          echo "Warte, bis der Container bereit ist..."
-          for i in {1..20}; do
-            # Prüfe den Health-Endpunkt. Bei Erfolg (Status 2xx) ist der Exit-Code 0.
-            if curl -s -f http://localhost:8080/health; then
-              echo "Container ist bereit!"
-              docker stop test-container
-              docker rm test-container
-              exit 0 # Beendet das Skript erfolgreich
-            fi
-            echo "Versuch $i/20 fehlgeschlagen. Nächster Versuch in 3 Sekunden..."
-            sleep 3
-          done
-
-          echo "Fehler: Container war nicht rechtzeitig bereit."
-          echo "Container-Logs werden ausgegeben:"
-          docker logs test-container
+          sleep 10
+          curl -f http://localhost:8080/health || exit 1
           docker stop test-container
           docker rm test-container
-          exit 1
+          echo "Container test successful"
 
       - name: Trivy Vulnerability Scan
         uses: aquasecurity/trivy-action@0.28.0
@@ -155,20 +139,26 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Neues Deployment auf App Runner starten
+      - name: Deployment auf App Runner starten und abschließen
         run: |
-          echo "Suche Service ARN für bachelor-rest-api..."
+          echo "INFO: Suche ARN für Service 'bachelor-rest-api'..."
           SERVICE_ARN=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='bachelor-rest-api'].ServiceArn" --output text)
 
           if [ -z "$SERVICE_ARN" ]; then
-            echo "Fehler: Service 'bachelor-rest-api' nicht gefunden. Deployment kann nicht gestartet werden."
+            echo "ERROR: Service 'bachelor-rest-api' nicht gefunden."
             exit 1
           fi
 
-          echo "Starte neues Deployment für Service $SERVICE_ARN"
+          echo "INFO: Warte, bis der Service einen stabilen Zustand erreicht hat"
+          aws apprunner wait service-instance-deployed --service-arn $SERVICE_ARN
+
+          echo "INFO: Service ist stabil. Starte neues Deployment"
           aws apprunner start-deployment --service-arn $SERVICE_ARN
-          
-          echo "Deployment erfolgreich gestartet. Überwache den Status in der AWS Konsole."
+
+          echo "INFO: Warte auf Abschluss des neuen Deployments"
+          aws apprunner wait service-instance-deployed --service-arn $SERVICE_ARN
+
+          echo "SUCCESS: Deployment erfolgreich abgeschlossen."
 
       - name: Service Status prüfen
         run: |
