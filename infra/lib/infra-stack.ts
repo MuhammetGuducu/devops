@@ -110,8 +110,7 @@ export class InfraStack extends cdk.Stack {
       serviceName: serviceName,
       source: apprunner.Source.fromEcr({
         repository: repo,
-        tagOrDigest: props.isPreview ? `pr-${props.prNumber}` : 'latest',
-        imageConfiguration: {
+        tagOrDigest: props.isPreview ? `pr-${props.prNumber}` : props.commitSha || 'latest',        imageConfiguration: {
           port: 8080,
           environmentVariables,
           environmentSecrets: apiSecret ? {
