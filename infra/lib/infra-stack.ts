@@ -17,9 +17,10 @@ export class InfraStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: InfraStackProps) {
     super(scope, id, props);
 
+    // Suffix um einen neuen Service zu erstellen
+    const serviceSuffix = props.commitSha ? props.commitSha.substring(0, 8) : 'default';
     const serviceName = props.isPreview ?
-      `bachelor-preview-pr-${props.prNumber}` : 'bachelor-rest-api';
-
+      `bachelor-preview-pr-${props.prNumber}` : `bachelor-rest-api-${serviceSuffix}`;
     const repoName = props.isPreview ?
       'devops-demo-preview-shared' : 'bachelor-app-repo';
 
