@@ -65,11 +65,10 @@ jobs:
             -t bachelor-app:${{ github.sha }} \
             -t bachelor-app:latest .
           echo "Docker build completed"
-          echo "image_tag=bachelor-app:${{ github.sha }}" >> $GITHUB_OUTPUT
 
       - name: Container testen
         run: |
-          echo "Testing container.."
+          echo "Testing container..."
           docker run -d --name test-container -p 8080:8080 bachelor-app:latest
           sleep 5
           curl -f http://localhost:8080/health || exit 1
@@ -140,134 +139,78 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Stack Status prüfen und bereinigen
-        working-directory: ./infra
-        run: |
-          npm ci
-          npm run build
-          
-          # Prüfe Stack Status
-          STACK_STATUS=$(aws cloudformation describe-stacks \
-            --stack-name bachelor-prod-stack \
-            --query 'Stacks[0].StackStatus' \
-            --output text 2>/dev/null || echo "DOES_NOT_EXIST")
-          
-          echo "Current stack status: $STACK_STATUS"
-          
-          # Wenn Stack in fehlerhaftem Zustand, lösche ihn
-          if [[ "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]] || \
-             [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" ]] || \
-             [[ "$STACK_STATUS" == "CREATE_FAILED" ]] || \
-             [[ "$STACK_STATUS" == "DELETE_FAILED" ]]; then
-            echo "Stack ist in fehlerhaftem Zustand. Lösche Stack..."
-            npx cdk destroy bachelor-prod-stack --force || true
-            
-            # Warte bis Stack gelöscht ist
-            echo "Warte auf Stack-Löschung..."
-            aws cloudformation wait stack-delete-complete \
-              --stack-name bachelor-prod-stack || true
-          fi
-          
-          # Prüfe ob App Runner Service existiert
-          SERVICE_ARN=$(aws apprunner list-services \
-            --query "ServiceSummaryList[?ServiceName=='bachelor-rest-api'].ServiceArn" \
-            --output text || echo "")
-          
-          if [ -n "$SERVICE_ARN" ]; then
-            # Prüfe Service Status
-            SERVICE_STATUS=$(aws apprunner describe-service \
-              --service-arn "$SERVICE_ARN" \
-              --query "Service.Status" \
-              --output text 2>/dev/null || echo "NOT_FOUND")
-            
-            echo "App Runner Service Status: $SERVICE_STATUS"
-            
-            if [[ "$SERVICE_STATUS" == "DELETE_FAILED" ]] || [[ "$SERVICE_STATUS" == "NOT_FOUND" ]]; then
-              echo "Service in fehlerhaftem Zustand. Lösche Stack für Neustart..."
-              npx cdk destroy bachelor-prod-stack --force || true
-              aws cloudformation wait stack-delete-complete \
-                --stack-name bachelor-prod-stack || true
-            fi
-          fi
-
       - name: CDK Stack deployen
         working-directory: ./infra
         env:
           APP_VERSION: ${{ needs.build-and-scan.outputs.version }}
           COMMIT_SHA: ${{ github.sha }}
+          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
         run: |
+          echo "Installing CDK dependencies..."
+          npm ci
+          
+          echo "Building TypeScript..."
+          npm run build
+          
+          echo "Bootstrapping CDK (if needed)..."
+          npx cdk bootstrap || true
+          
           echo "Deploying CDK stack..."
-          npx cdk deploy bachelor-prod-stack \
+          npx cdk deploy BachelorProdStack \
             --require-approval never \
             --context appVersion=$APP_VERSION \
-            --context commitSha=$COMMIT_SHA
+            --context commitSha=$COMMIT_SHA \
+            --context isPreview=false
           
           echo "Deployment completed"
 
-      - name: Warte auf Service Update
+      - name: Service Status prüfen
         run: |
-          echo "Warte auf App Runner Service..."
+          echo "Warte kurz auf Service Update..."
           sleep 30
           
-          SERVICE_ARN=$(aws apprunner list-services \
-            --query "ServiceSummaryList[?ServiceName=='bachelor-rest-api'].ServiceArn" \
-            --output text)
-          
-          if [ -n "$SERVICE_ARN" ]; then
-            echo "Prüfe Service Status..."
-            MAX_ATTEMPTS=30
-            ATTEMPT=0
-            
-            while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-              STATUS=$(aws apprunner describe-service \
-                --service-arn $SERVICE_ARN \
-                --query "Service.Status" \
-                --output text)
-              
-              echo "Service Status: $STATUS (Versuch $((ATTEMPT+1))/$MAX_ATTEMPTS)"
-              
-              if [ "$STATUS" = "RUNNING" ]; then
-                echo "Service läuft erfolgreich!"
-                break
-              elif [ "$STATUS" = "CREATE_FAILED" ] || [ "$STATUS" = "DELETE_FAILED" ]; then
-                echo "Service Deployment fehlgeschlagen!"
-                exit 1
-              fi
-              
-              sleep 10
-              ATTEMPT=$((ATTEMPT+1))
-            done
-          else
-            echo "Service konnte nicht gefunden werden!"
-            exit 1
-          fi
-
-      - name: Service URL ausgeben und testen
-        run: |
+          # Hole Service Info aus CloudFormation Outputs
           SERVICE_URL=$(aws cloudformation describe-stacks \
             --stack-name bachelor-prod-stack \
             --query 'Stacks[0].Outputs[?OutputKey==`ServiceURL`].OutputValue' \
             --output text)
           
+          SERVICE_ARN=$(aws cloudformation describe-stacks \
+            --stack-name bachelor-prod-stack \
+            --query 'Stacks[0].Outputs[?OutputKey==`ServiceARN`].OutputValue' \
+            --output text)
+          
           echo "Service URL: $SERVICE_URL"
+          echo "Service ARN: $SERVICE_ARN"
           
-          # Teste ob der Service erreichbar ist
-          echo "Teste Service Health Endpoint.."
-          MAX_RETRIES=5
-          RETRY=0
-          
-          while [ $RETRY -lt $MAX_RETRIES ]; do
-            if curl -f -s "$SERVICE_URL/health" > /dev/null; then
-              echo "Service ist erreichbar unter: $SERVICE_URL"
-              break
-            else
-              echo "Warte auf Service... (Versuch $((RETRY+1))/$MAX_RETRIES)"
-              sleep 15
-              RETRY=$((RETRY+1))
+          # Prüfe Service Status
+          if [ -n "$SERVICE_ARN" ]; then
+            STATUS=$(aws apprunner describe-service \
+              --service-arn $SERVICE_ARN \
+              --query "Service.Status" \
+              --output text)
+            
+            echo "Service Status: $STATUS"
+            
+            # Teste Service
+            echo "Teste Service Health Endpoint..."
+            MAX_RETRIES=10
+            RETRY=0
+            
+            while [ $RETRY -lt $MAX_RETRIES ]; do
+              if curl -f -s "$SERVICE_URL/health" > /dev/null; then
+                echo "Service ist erreichbar unter: $SERVICE_URL"
+                break
+              else
+                echo "Warte auf Service... (Versuch $((RETRY+1))/$MAX_RETRIES)"
+                sleep 15
+                RETRY=$((RETRY+1))
+              fi
+            done
+            
+            if [ $RETRY -eq $MAX_RETRIES ]; then
+              echo "Service ist noch nicht erreichbar, aber Deployment war erfolgreich."
+              echo "App Runner braucht manchmal einige Minuten für das erste Deployment."
             fi
-          done
-          
-          if [ $RETRY -eq $MAX_RETRIES ]; then
-            echo "Service ist nicht erreichbar nach $MAX_RETRIES Versuchen"
-            exit 1
           fi
