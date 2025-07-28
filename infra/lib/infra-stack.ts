@@ -17,7 +17,6 @@ export class InfraStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: InfraStackProps) {
     super(scope, id, props);
 
-    // ✅ This correctly sets a dynamic name for previews and a static name for production.
     const serviceName = props.isPreview ?
       `bachelor-preview-pr-${props.prNumber}` : 'bachelor-rest-api';
 
@@ -56,7 +55,7 @@ export class InfraStack extends cdk.Stack {
       description: 'Rolle für Bachelor Demo Service in App Runner',
     });
 
-    // Add necessary permissions to the instance role
+    // Add permissions to the instance role
     apprunnerInstanceRole.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName('AWSXRayDaemonWriteAccess')
     );
@@ -64,14 +63,14 @@ export class InfraStack extends cdk.Stack {
       iam.ManagedPolicy.fromAwsManagedPolicyName('CloudWatchLogsFullAccess')
     );
 
-    // X-Ray Observability Configuration (only for Production)
+    // X-Ray Observability Configuration (nur Production)
     const observability = props.isPreview ? undefined :
       new apprunner.ObservabilityConfiguration(this, 'ObservabilityConfig', {
         observabilityConfigurationName: `${serviceName}-xray`,
         traceConfigurationVendor: apprunner.TraceConfigurationVendor.AWSXRAY
       });
 
-    // Secrets Manager for API Keys (only for Production)
+    // Secrets Manager for API Keys (nur Production)
     let apiSecret: secretsmanager.Secret | undefined;
     if (!props.isPreview) {
       apiSecret = new secretsmanager.Secret(this, 'ApiSecret', {
@@ -108,7 +107,7 @@ export class InfraStack extends cdk.Stack {
 
     // App Runner Service Definition
     const service = new apprunner.Service(this, 'AppRunnerService', {
-      serviceName: serviceName, // ✅ Correctly uses the dynamic/static service name
+      serviceName: serviceName,
       source: apprunner.Source.fromEcr({
         repository: repo,
         tagOrDigest: props.isPreview ? `pr-${props.prNumber}` : 'latest',
@@ -135,7 +134,7 @@ export class InfraStack extends cdk.Stack {
       autoDeploymentsEnabled: false,
     });
 
-    // CloudWatch Dashboard (only for Production)
+    // CloudWatch Dashboard (nur bei Productionsumgebung)
     if (!props.isPreview) {
       new cloudwatch.Dashboard(this, 'ServiceDashboard', {
         dashboardName: `${serviceName}-dashboard`,

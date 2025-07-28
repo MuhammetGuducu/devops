@@ -95,9 +95,9 @@ jobs:
         with:
           issue-number: ${{ github.event.number }}
           body: |
-            ## 🚀 Preview Environment
+            ## Preview Environment
             
-            **Status:** ✅ Bereit  
+            **Status:** Bereit  
             **URL:** $(jq -r '.["BachelorPreviewStack-PR${{ github.event.number }}"].ServiceURL' cdk-outputs.json)
             **Version:** preview-pr${{ github.event.number }}  
             

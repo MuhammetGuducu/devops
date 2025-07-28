@@ -1,4 +1,4 @@
-// index.js - DevOps Demo Service
+// index.js DevOps Demo Service
 const express = require('express');
 const AWSXRay = require('aws-xray-sdk-core');
 const NodeCache = require('node-cache');
@@ -88,9 +88,6 @@ app.get('/', (req, res) => {
           <a href="/health">Health Check</a> |
           <a href="/deployment">Deployment Info</a> |
           <a href="/metrics">Service Metrics</a> |
-          <a href="/trace">X-Ray Trace Test</a> |
-          <a href="/feature-flags">Feature Flags</a> |
-          <a href="/chaos">Chaos Engineering</a> |
           <a href="/config">Configuration</a>
         </nav>
         
@@ -101,10 +98,8 @@ app.get('/', (req, res) => {
             <li>Infrastructure as Code (AWS CDK)</li>
             <li>Container-based Deployment</li>
             <li>Automated Testing & Security Scanning</li>
-            <li>Feature Flags & Dynamic Configuration</li>
             <li>Observability (Metrics, Traces, Logs)</li>
             <li>Preview Environments for PRs</li>
-            <li>Blue/Green Deployments</li>
           </ul>
         </div>
       </body>

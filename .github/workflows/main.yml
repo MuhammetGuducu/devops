@@ -166,4 +166,4 @@ jobs:
             --stack-name bachelor-prod-stack \
             --query 'Stacks[0].Outputs[?OutputKey==`ServiceURL`].OutputValue' \
             --output text)
-          echo "🚀 Service deployed to: $SERVICE_URL"
+          echo "Service deployed to: $SERVICE_URL"
