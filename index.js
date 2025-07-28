@@ -83,7 +83,7 @@ app.get('/', (req, res) => {
           <p><strong>Region:</strong> ${deploymentInfo.region}</p>
         </div>
         
-        <h2>Available Endpoints</h2>
+        <h2>Endpoints</h2>
         <nav>
           <a href="/health">Health Check</a> |
           <a href="/deployment">Deployment Info</a> |
@@ -92,14 +92,14 @@ app.get('/', (req, res) => {
         </nav>
         
         <div class="info">
-          <h3>DevOps Features Demonstrated:</h3>
+          <h3>DevOps Features:</h3>
           <ul>
             <li>Automated CI/CD Pipeline</li>
             <li>Infrastructure as Code (AWS CDK)</li>
             <li>Container-based Deployment</li>
             <li>Automated Testing & Security Scanning (Trivy, Unit Tests)</li>
             <li>Observability (Metrics, Traces, Logs)</li>
-            <li>Preview Environments for PRs</li>
+            <li>Preview Environments</li>
           </ul>
         </div>
       </body>

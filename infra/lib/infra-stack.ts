@@ -17,10 +17,9 @@ export class InfraStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: InfraStackProps) {
     super(scope, id, props);
 
-    // Suffix um einen neuen Service zu erstellen
-    const serviceSuffix = props.commitSha ? props.commitSha.substring(0, 8) : 'default';
     const serviceName = props.isPreview ?
-      `bachelor-preview-pr-${props.prNumber}` : `bachelor-rest-api-${serviceSuffix}`;
+      `bachelor-preview-pr-${props.prNumber}` : 'bachelor-rest-api';
+
     const repoName = props.isPreview ?
       'devops-demo-preview-shared' : 'bachelor-app-repo';
 
@@ -96,7 +95,7 @@ export class InfraStack extends cdk.Stack {
       NODE_ENV: props.isPreview ? 'preview' : 'production',
       AWS_REGION: this.region,
       SERVICE_NAME: serviceName,
-      COMMIT_SHA: props.commitSha || 'local',
+      COMMIT_SHA: props.commitSha || 'unknown',
       DEPLOYMENT_TIME: new Date().toISOString(),
     };
     if (props.appVersion) {
@@ -112,7 +111,7 @@ export class InfraStack extends cdk.Stack {
       serviceName: serviceName,
       source: apprunner.Source.fromEcr({
         repository: repo,
-        tagOrDigest: props.isPreview ? `pr-${props.prNumber}` : props.commitSha || 'latest',
+        tagOrDigest: props.isPreview ? `pr-${props.prNumber}` : 'latest',
         imageConfiguration: {
           port: 8080,
           environmentVariables,
@@ -133,7 +132,8 @@ export class InfraStack extends cdk.Stack {
       }),
       cpu: apprunner.Cpu.QUARTER_VCPU,
       memory: apprunner.Memory.HALF_GB,
-      autoDeploymentsEnabled: true,
+      // Automatische Deployments für Production aktiviert
+      autoDeploymentsEnabled: !props.isPreview,
     });
 
     // CloudWatch Dashboard (nur bei Productionsumgebung)
