@@ -111,6 +111,7 @@ export class InfraStack extends cdk.Stack {
       serviceName: serviceName,
       source: apprunner.Source.fromEcr({
         repository: repo,
+        // WICHTIG: Für Production immer 'latest' verwenden mit autoDeploymentsEnabled: true
         tagOrDigest: props.isPreview ? `pr-${props.prNumber}` : 'latest',
         imageConfiguration: {
           port: 8080,
