@@ -336,7 +336,7 @@ app.use((req, res) => {
   });
 });
 
-// Error Handler
+// Error Handlers
 app.use((err, req, res, next) => {
   metrics.errors++;
   console.error('Error:', err);
