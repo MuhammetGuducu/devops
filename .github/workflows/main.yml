@@ -139,7 +139,7 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Deployment auf App Runner starten und abschließen
+      - name: Deployment auf App Runner starten
         run: |
           echo "INFO: Suche ARN für Service 'bachelor-rest-api'..."
           SERVICE_ARN=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='bachelor-rest-api'].ServiceArn" --output text)
@@ -149,16 +149,29 @@ jobs:
             exit 1
           fi
 
-          echo "INFO: Warte, bis der Service einen stabilen Zustand erreicht hat"
-          aws apprunner wait service-instance-deployed --service-arn $SERVICE_ARN
+          echo "INFO: Warte, bis der Service den Zustand 'RUNNING' erreicht hat..."
+          for i in {1..30}; do
+            STATUS=$(aws apprunner describe-service --service-arn $SERVICE_ARN --query "Service.Status" --output text)
+            echo "INFO: Aktueller Status: $STATUS"
+            
+            # Bei Erfolg die Schleife verlassen
+            [ "$STATUS" == "RUNNING" ] && break
+            
+            # Bei fatalem Fehler die Pipeline abbrechen
+            if [ "$STATUS" == "CREATE_FAILED" ] || [ "$STATUS" == "DELETED" ]; then
+              echo "ERROR: Service ist in einem nicht behebbaren Zustand ($STATUS)."
+              exit 1
+            fi
+            
+            # Timeout nach dem letzten Versuch
+            [ "$i" -eq 30 ] && echo "ERROR: Zeitüberschreitung nach 7.5 Minuten." && exit 1
+            
+            sleep 15
+          done
 
-          echo "INFO: Service ist stabil. Starte neues Deployment"
           aws apprunner start-deployment --service-arn $SERVICE_ARN
-
-          echo "INFO: Warte auf Abschluss des neuen Deployments"
-          aws apprunner wait service-instance-deployed --service-arn $SERVICE_ARN
-
-          echo "SUCCESS: Deployment erfolgreich abgeschlossen."
+          
+          echo "INFO: Deployment erfolgreich gestartet."
 
       - name: Service Status prüfen
         run: |
