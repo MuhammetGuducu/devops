@@ -23,7 +23,7 @@ export class InfraStack extends cdk.Stack {
     const repoName = props.isPreview ?
       'devops-demo-preview-shared' : 'bachelor-app-repo';
 
-    // shared ECR Repository)
+    // shared ECR Repository
     const repo = ecr.Repository.fromRepositoryName(this, 'AppRepository', repoName);
 
     // App Runner Access Role um images aus ECR zu ziehen
@@ -95,7 +95,8 @@ export class InfraStack extends cdk.Stack {
       NODE_ENV: props.isPreview ? 'preview' : 'production',
       AWS_REGION: this.region,
       SERVICE_NAME: serviceName,
-      COMMIT_SHA: props.commitSha || 'local', // Erzwinge Deployment für jeden commit
+      COMMIT_SHA: props.commitSha || 'local',
+      DEPLOYMENT_TIME: new Date().toISOString(),
     };
     if (props.appVersion) {
       environmentVariables.APP_VERSION = props.appVersion;
@@ -110,7 +111,8 @@ export class InfraStack extends cdk.Stack {
       serviceName: serviceName,
       source: apprunner.Source.fromEcr({
         repository: repo,
-        tagOrDigest: props.isPreview ? `pr-${props.prNumber}` : props.commitSha || 'latest',        imageConfiguration: {
+        tagOrDigest: props.isPreview ? `pr-${props.prNumber}` : props.commitSha || 'latest',
+        imageConfiguration: {
           port: 8080,
           environmentVariables,
           environmentSecrets: apiSecret ? {
@@ -130,7 +132,7 @@ export class InfraStack extends cdk.Stack {
       }),
       cpu: apprunner.Cpu.QUARTER_VCPU,
       memory: apprunner.Memory.HALF_GB,
-      autoDeploymentsEnabled: false,
+      autoDeploymentsEnabled: true,
     });
 
     // CloudWatch Dashboard (nur bei Productionsumgebung)

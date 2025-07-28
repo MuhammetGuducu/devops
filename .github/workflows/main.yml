@@ -160,10 +160,67 @@ jobs:
           
           echo "Deployment completed"
 
-      - name: Service URL ausgeben
+      - name: Warte auf Service Update
+        run: |
+          echo "⏳ Warte auf App Runner Service Update..."
+          sleep 60
+          
+          SERVICE_ARN=$(aws apprunner list-services \
+            --query "ServiceSummaryList[?ServiceName=='bachelor-rest-api'].ServiceArn" \
+            --output text)
+          
+          if [ -n "$SERVICE_ARN" ]; then
+            echo "Prüfe Service Status..."
+            MAX_ATTEMPTS=30
+            ATTEMPT=0
+            
+            while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+              STATUS=$(aws apprunner describe-service \
+                --service-arn $SERVICE_ARN \
+                --query "Service.Status" \
+                --output text)
+              
+              echo "Service Status: $STATUS (Versuch $((ATTEMPT+1))/$MAX_ATTEMPTS)"
+              
+              if [ "$STATUS" = "RUNNING" ]; then
+                echo "Service läuft erfolgreich"
+                break
+              elif [ "$STATUS" = "CREATE_FAILED" ] || [ "$STATUS" = "DELETE_FAILED" ]; then
+                echo "Service Deployment fehlgeschlagen"
+                exit 1
+              fi
+              
+              sleep 10
+              ATTEMPT=$((ATTEMPT+1))
+            done
+          fi
+
+      - name: Service URL ausgeben und testen
         run: |
           SERVICE_URL=$(aws cloudformation describe-stacks \
             --stack-name bachelor-prod-stack \
             --query 'Stacks[0].Outputs[?OutputKey==`ServiceURL`].OutputValue' \
             --output text)
+          
           echo "Service deployed to: $SERVICE_URL"
+          
+          # Teste ob der Service erreichbar ist
+          echo "Teste Service Health Endpoint..."
+          MAX_RETRIES=5
+          RETRY=0
+          
+          while [ $RETRY -lt $MAX_RETRIES ]; do
+            if curl -f -s "$SERVICE_URL/health" > /dev/null; then
+              echo "Service ist erreichbar"
+              break
+            else
+              echo "Warte auf Service... (Versuch $((RETRY+1))/$MAX_RETRIES)"
+              sleep 10
+              RETRY=$((RETRY+1))
+            fi
+          done
+          
+          if [ $RETRY -eq $MAX_RETRIES ]; then
+            echo "Service ist nicht erreichbar nach $MAX_RETRIES Versuchen!"
+            exit 1
+          fi
