@@ -74,7 +74,7 @@ app.get('/', (req, res) => {
         </style>
       </head>
       <body>
-        <h1>🚀 DevOps Demo Service</h1>
+        <h1>DevOps Demo Service</h1>
         <div class="info">
           <h2>Deployment Information</h2>
           <p><strong>Environment:</strong> ${deploymentInfo.environment}</p>
@@ -83,7 +83,7 @@ app.get('/', (req, res) => {
           <p><strong>Region:</strong> ${deploymentInfo.region}</p>
         </div>
         
-        <h2>🔍 Available Endpoints</h2>
+        <h2>Available Endpoints</h2>
         <nav>
           <a href="/health">Health Check</a> |
           <a href="/deployment">Deployment Info</a> |
@@ -174,7 +174,6 @@ app.get('/metrics', (req, res) => {
 
 // X-Ray Trace Demo
 app.get('/trace', (req, res) => {
-  // Safe X-Ray handling
   let segment = null;
   try {
     if (isXRayEnabled) {

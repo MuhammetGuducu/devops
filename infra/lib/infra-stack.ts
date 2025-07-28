@@ -23,10 +23,10 @@ export class InfraStack extends cdk.Stack {
     const repoName = props.isPreview ?
       'devops-demo-preview-shared' : 'bachelor-app-repo';
 
-    // Reference existing repository
+    // shared ECR Repository)
     const repo = ecr.Repository.fromRepositoryName(this, 'AppRepository', repoName);
 
-    // App Runner Access Role to pull images from ECR
+    // App Runner Access Role um images aus ECR zu ziehen
     const appRunnerAccessRole = new iam.Role(this, 'AppRunnerAccessRole', {
       assumedBy: new iam.ServicePrincipal('build.apprunner.amazonaws.com'),
       description: 'Access role for App Runner to pull images from ECR',
@@ -49,13 +49,13 @@ export class InfraStack extends cdk.Stack {
       }
     });
 
-    // IAM Role for the App Runner Instance itself
+    // IAM Role für die App Runner Instance
     const apprunnerInstanceRole = new iam.Role(this, 'AppRunnerInstanceRole', {
       assumedBy: new iam.ServicePrincipal('tasks.apprunner.amazonaws.com'),
       description: 'Rolle für Bachelor Demo Service in App Runner',
     });
 
-    // Add permissions to the instance role
+    // Berechtigungen an die instance role
     apprunnerInstanceRole.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName('AWSXRayDaemonWriteAccess')
     );
@@ -70,7 +70,7 @@ export class InfraStack extends cdk.Stack {
         traceConfigurationVendor: apprunner.TraceConfigurationVendor.AWSXRAY
       });
 
-    // Secrets Manager for API Keys (nur Production)
+    // Secrets Manager für API Keys (nur Production)
     let apiSecret: secretsmanager.Secret | undefined;
     if (!props.isPreview) {
       apiSecret = new secretsmanager.Secret(this, 'ApiSecret', {
@@ -90,12 +90,12 @@ export class InfraStack extends cdk.Stack {
       apiSecret.grantRead(apprunnerInstanceRole);
     }
 
-    // Environment variables to be passed to the container
+    // Environment variables zum container
     const environmentVariables: { [key: string]: string } = {
       NODE_ENV: props.isPreview ? 'preview' : 'production',
       AWS_REGION: this.region,
       SERVICE_NAME: serviceName,
-      COMMIT_SHA: props.commitSha || 'local', // Forces deployment on every commit
+      COMMIT_SHA: props.commitSha || 'local', // Erzwinge Deployment für jeden commit
     };
     if (props.appVersion) {
       environmentVariables.APP_VERSION = props.appVersion;
@@ -166,7 +166,6 @@ export class InfraStack extends cdk.Stack {
       description: 'App Runner Service ARN',
     });
 
-    // Stack Tags for organization and cost tracking
     cdk.Tags.of(this).add('Project', 'Bachelor-DevOps-Demo');
     cdk.Tags.of(this).add('ManagedBy', 'CDK');
     cdk.Tags.of(this).add('Environment', props.isPreview ? 'preview' : 'production');
