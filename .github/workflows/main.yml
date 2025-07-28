@@ -173,52 +173,31 @@ jobs:
           
           echo "INFO: Deployment erfolgreich gestartet."
 
-      - name: Service Status prüfen
+      - name: Warten bis Service betriebsbereit ist
         run: |
-          echo "Warte kurz auf Service Update..."
-          sleep 30
-          
-          # Hole Service Info aus CloudFormation Outputs
-          SERVICE_URL=$(aws cloudformation describe-stacks \
-            --stack-name bachelor-prod-stack \
-            --query 'Stacks[0].Outputs[?OutputKey==`ServiceURL`].OutputValue' \
-            --output text)
-          
-          SERVICE_ARN=$(aws cloudformation describe-stacks \
-            --stack-name bachelor-prod-stack \
-            --query 'Stacks[0].Outputs[?OutputKey==`ServiceARN`].OutputValue' \
-            --output text)
-          
-          echo "Service URL: $SERVICE_URL"
-          echo "Service ARN: $SERVICE_ARN"
-          
-          # Prüfe Service Status
-          if [ -n "$SERVICE_ARN" ]; then
-            STATUS=$(aws apprunner describe-service \
-              --service-arn $SERVICE_ARN \
-              --query "Service.Status" \
-              --output text)
-            
-            echo "Service Status: $STATUS"
-            
-            # Teste Service
-            echo "Teste Service Health Endpoint..."
-            MAX_RETRIES=10
-            RETRY=0
-            
-            while [ $RETRY -lt $MAX_RETRIES ]; do
-              if curl -f -s "$SERVICE_URL/health" > /dev/null; then
-                echo "Service ist erreichbar unter: $SERVICE_URL"
-                break
-              else
-                echo "Warte auf Service... (Versuch $((RETRY+1))/$MAX_RETRIES)"
-                sleep 15
-                RETRY=$((RETRY+1))
-              fi
-            done
-            
-            if [ $RETRY -eq $MAX_RETRIES ]; then
-              echo "Service ist noch nicht erreichbar, aber Deployment war erfolgreich."
-              echo "App Runner braucht manchmal einige Minuten für das erste Deployment."
-            fi
+          echo "INFO: Suche ARN für Service 'bachelor-rest-api'"
+          SERVICE_ARN=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='bachelor-rest-api'].ServiceArn" --output text)
+
+          if [ -z "$SERVICE_ARN" ]; then
+            echo "ERROR: Service nicht gefunden."
+            exit 1
           fi
+
+          echo "INFO: Warte, bis Service den Status RUNNING erreicht"
+          for i in {1..12}; do
+            STATUS=$(aws apprunner describe-service --service-arn $SERVICE_ARN --query "Service.Status" --output text)
+            
+            if [ "$STATUS" == "RUNNING" ]; then
+              echo "SUCCESS: Service ist im Zustand RUNNING."
+              exit 0
+            elif [[ "$STATUS" == "CREATE_FAILED" || "$STATUS" == "DELETED" ]]; then
+              echo "ERROR: Service ist im Fehlerzustand: $STATUS"
+              exit 1
+            fi
+            
+            echo "INFO: Aktueller Status ist '$STATUS'. Warte 10 Sekunden."
+            sleep 10
+          done
+          
+          echo "ERROR: Zeitüberschreitung. Service war nicht rechtzeitig bereit."
+          exit 1
