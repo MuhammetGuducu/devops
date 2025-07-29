@@ -178,9 +178,8 @@ jobs:
               echo "ERROR: Service ist im Fehlerzustand '$STATUS'."
               exit 1
             
-            # Fall 3: Service arbeitet bereits (OPERATION_IN_PROGRESS). Einfach nur warten.
             else
-              echo "INFO: Service arbeitet. Warte auf nächsten Check..."
+
             fi
             
             sleep 30
