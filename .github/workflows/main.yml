@@ -139,32 +139,27 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Deployment starten, überwachen und verifizieren
+      - name: Deployment starten und via App-Endpoint verifizieren
         id: deploy_and_verify
         run: |
+          set -e
+
           SERVICE_NAME="bachelor-rest-api"
           EXPECTED_COMMIT_SHA="${{ github.sha }}"
           
-          echo "INFO: Suche ARN für Service '$SERVICE_NAME'..."
-          SERVICE_ARN=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='$SERVICE_NAME'].ServiceArn" --output text)
-          if [ -z "$SERVICE_ARN" ]; then echo "ERROR: Service nicht gefunden."; exit 1; fi
+          echo "INFO: Suche ARN und URL für Service '$SERVICE_NAME'..."
+          SERVICE_INFO=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='$SERVICE_NAME']")
+          SERVICE_ARN=$(echo $SERVICE_INFO | jq -r '.[0].ServiceArn')
+          SERVICE_URL="https://$(echo $SERVICE_INFO | jq -r '.[0].ServiceUrl')"
+          if [ -z "$SERVICE_ARN" ] || [ "$SERVICE_ARN" == "null" ]; then echo "ERROR: Service nicht gefunden."; exit 1; fi
 
           echo "INFO: Warte, bis der Service stabil und im Zustand RUNNING ist..."
           for i in {1..20}; do # max 5 Minuten
             STATUS=$(aws apprunner describe-service --service-arn $SERVICE_ARN --query "Service.Status" --output text)
             echo "INFO (Pre-Check): Aktueller Status ist '$STATUS'."
-            if [ "$STATUS" == "RUNNING" ]; then
-              echo "SUCCESS: Service ist bereit für ein neues Deployment."
-              break # Verlässt die Pre-Check-Schleife
-            fi
-            if [[ "$STATUS" == "CREATE_FAILED" || "$STATUS" == "DELETED" ]]; then
-              echo "ERROR: Service ist in einem nicht behebbaren Zustand '$STATUS'."
-              exit 1
-            fi
-            if [ "$i" -eq 20 ]; then
-              echo "ERROR: Zeitüberschreitung. Service wurde nicht rechtzeitig bereit."
-              exit 1
-            fi
+            if [ "$STATUS" == "RUNNING" ]; then break; fi
+            if [[ "$STATUS" == "CREATE_FAILED" || "$STATUS" == "DELETED" ]]; then echo "ERROR: Service ist im Fehlerzustand '$STATUS'."; exit 1; fi
+            if [ "$i" -eq 20 ]; then echo "ERROR: Zeitüberschreitung. Service wurde nicht rechtzeitig bereit."; exit 1; fi
             sleep 15
           done
 
@@ -173,19 +168,24 @@ jobs:
 
           echo "INFO: Warte auf Abschluss und Verifizierung des Deployments (max. 20 Minuten)..."
           for i in {1..40}; do # max 20 Minuten
-            SERVICE_STATE=$(aws apprunner describe-service --service-arn $SERVICE_ARN --query "Service.[Status, SourceConfiguration.ImageRepository.ImageIdentifier]")
-            CURRENT_STATUS=$(echo $SERVICE_STATE | jq -r '.[0]')
-            DEPLOYED_IMAGE_TAG=$(echo $SERVICE_STATE | jq -r '.[1]' | cut -d':' -f2)
+            STATUS=$(aws apprunner describe-service --service-arn $SERVICE_ARN --query "Service.Status" --output text)
+            echo "INFO (Post-Check): Service-Status ist '$STATUS'."
 
-            echo "INFO (Post-Check): Status ist '$CURRENT_STATUS'. Deployter Commit: '$DEPLOYED_IMAGE_TAG'."
+            if [ "$STATUS" == "RUNNING" ]; then
+              echo "INFO: Service ist RUNNING. Prüfe den Commit-SHA am /deployment Endpoint..."
+              # --fail lässt curl bei HTTP-Fehlern scheitern, jq fängt 'null' ab
+              DEPLOYED_COMMIT_SHA=$(curl -s --fail --max-time 10 "$SERVICE_URL/deployment" | jq -r '.commitSha // "not-found"')
 
-            if [[ "$CURRENT_STATUS" == "RUNNING" && "$DEPLOYED_IMAGE_TAG" == "$EXPECTED_COMMIT_SHA" ]]; then
-              echo "SUCCESS: Korrekter Commit $EXPECTED_COMMIT_SHA wurde erfolgreich deployed."
-              exit 0
+              if [ "$DEPLOYED_COMMIT_SHA" == "$EXPECTED_COMMIT_SHA" ]; then
+                echo "SUCCESS: Korrekter Commit $DEPLOYED_COMMIT_SHA wurde deployed und ist RUNNING."
+                exit 0
+              else
+                echo "INFO: Falscher Commit. Erwartet: $EXPECTED_COMMIT_SHA, Gefunden: $DEPLOYED_COMMIT_SHA. Warte..."
+              fi
             fi
             
-            if [[ "$CURRENT_STATUS" == "OPERATION_FAILED" || "$CURRENT_STATUS" == "DELETE_FAILED" ]]; then
-               echo "ERROR: Deployment-Operation ist fehlgeschlagen mit Status '$CURRENT_STATUS'."
+            if [[ "$STATUS" == "OPERATION_FAILED" || "$STATUS" == "DELETE_FAILED" ]]; then
+               echo "ERROR: Deployment-Operation ist fehlgeschlagen mit Status '$STATUS'."
                exit 1
             fi
             sleep 30
