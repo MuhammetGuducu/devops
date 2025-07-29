@@ -142,8 +142,6 @@ jobs:
       - name: Deployment starten und verifizieren
         id: verify_deployment
         run: |
-          set -e # Bricht das Skript bei Fehlern sofort ab
-
           SERVICE_NAME="bachelor-rest-api"
           EXPECTED_COMMIT_SHA="${{ github.sha }}"
           
