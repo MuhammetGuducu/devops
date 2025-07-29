@@ -79,7 +79,7 @@ app.get('/', (req, res) => {
           <h2>Deployment Information</h2>
           <p><strong>Environment:</strong> ${deploymentInfo.environment}</p>
           <p><strong>Version:</strong> ${deploymentInfo.version}</p>
-          <p><strong>Commit:</strong> <code>${deploymentInfo.commitSha.substring(0, 8)}</code></p>
+          <p><strong>Commit:</strong> <code>${deploymentInfo.commitSha.substring(0, 7)}</code></p>
           <p><strong>Region:</strong> ${deploymentInfo.region}</p>
         </div>
         

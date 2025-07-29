@@ -139,65 +139,44 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Deployment auf App Runner starten
+      - name: Deployment starten und verifizieren
+        id: verify_deployment
         run: |
-          echo "INFO: Suche ARN für Service 'bachelor-rest-api'..."
-          SERVICE_ARN=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='bachelor-rest-api'].ServiceArn" --output text)
+          set -e # Bricht das Skript bei Fehlern sofort ab
 
-          if [ -z "$SERVICE_ARN" ]; then
-            echo "ERROR: Service 'bachelor-rest-api' nicht gefunden."
-            exit 1
-          fi
-
-          echo "INFO: Warte, bis der Service den Zustand 'RUNNING' erreicht hat..."
-          for i in {1..30}; do
-            STATUS=$(aws apprunner describe-service --service-arn $SERVICE_ARN --query "Service.Status" --output text)
-            echo "INFO: Aktueller Status: $STATUS"
-            
-            # Bei Erfolg die Schleife verlassen
-            [ "$STATUS" == "RUNNING" ] && break
-            
-            # Bei fatalem Fehler die Pipeline abbrechen
-            if [ "$STATUS" == "CREATE_FAILED" ] || [ "$STATUS" == "DELETED" ]; then
-              echo "ERROR: Service ist in einem nicht behebbaren Zustand ($STATUS)."
-              exit 1
-            fi
-            
-            # Timeout nach dem letzten Versuch
-            [ "$i" -eq 30 ] && echo "ERROR: Zeitüberschreitung nach 7.5 Minuten." && exit 1
-            
-            sleep 15
-          done
-
+          SERVICE_NAME="bachelor-rest-api"
+          EXPECTED_COMMIT_SHA="${{ github.sha }}"
+          
+          echo "INFO: Suche ARN für Service '$SERVICE_NAME'..."
+          SERVICE_ARN=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='$SERVICE_NAME'].ServiceArn" --output text)
+          if [ -z "$SERVICE_ARN" ]; then echo "ERROR: Service nicht gefunden."; exit 1; fi
+          
+          echo "INFO: Starte neues Deployment für Commit $EXPECTED_COMMIT_SHA..."
           aws apprunner start-deployment --service-arn $SERVICE_ARN
-          
-          echo "INFO: Deployment erfolgreich gestartet."
 
-      - name: Warten bis Service betriebsbereit ist
-        run: |
-          echo "INFO: Suche ARN für Service 'bachelor-rest-api'"
-          SERVICE_ARN=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='bachelor-rest-api'].ServiceArn" --output text)
-
-          if [ -z "$SERVICE_ARN" ]; then
-            echo "ERROR: Service nicht gefunden."
-            exit 1
-          fi
-
-          echo "INFO: Warte, bis Service den Status RUNNING erreicht"
-          for i in {1..12}; do
-            STATUS=$(aws apprunner describe-service --service-arn $SERVICE_ARN --query "Service.Status" --output text)
+          echo "INFO: Warte auf Abschluss des Deployments (max. 20 Minuten)..."
+          for i in {1..40}; do
+            # Hole alle relevanten Infos mit einem einzigen API-Call
+            SERVICE_STATE=$(aws apprunner describe-service --service-arn $SERVICE_ARN --query "Service.[Status, SourceConfiguration.ImageRepository.ImageIdentifier]")
             
-            if [ "$STATUS" == "RUNNING" ]; then
-              echo "SUCCESS: Service ist im Zustand RUNNING."
+            CURRENT_STATUS=$(echo $SERVICE_STATE | jq -r '.[0]')
+            DEPLOYED_IMAGE_TAG=$(echo $SERVICE_STATE | jq -r '.[1]' | cut -d':' -f2)
+
+            echo "INFO (Versuch $i/40): Status ist '$CURRENT_STATUS'. Deployter Commit ist '$DEPLOYED_IMAGE_TAG'."
+
+            # Erfolgsbedingung: Status ist RUNNING und der Commit-SHA stimmt überein
+            if [[ "$CURRENT_STATUS" == "RUNNING" && "$DEPLOYED_IMAGE_TAG" == "$EXPECTED_COMMIT_SHA" ]]; then
+              echo "SUCCESS: Korrekter Commit $EXPECTED_COMMIT_SHA wurde erfolgreich deployed und ist RUNNING."
               exit 0
-            elif [[ "$STATUS" == "CREATE_FAILED" || "$STATUS" == "DELETED" ]]; then
-              echo "ERROR: Service ist im Fehlerzustand: $STATUS"
+            fi
+            
+            if [[ "$CURRENT_STATUS" == "CREATE_FAILED" || "$CURRENT_STATUS" == "DELETED" || "$CURRENT_STATUS" == "DELETE_FAILED" ]]; then
+              echo "ERROR: Service ist im Fehlerzustand '$CURRENT_STATUS'."
               exit 1
             fi
             
-            echo "INFO: Aktueller Status ist '$STATUS'. Warte 10 Sekunden."
-            sleep 10
+            sleep 30
           done
           
-          echo "ERROR: Zeitüberschreitung. Service war nicht rechtzeitig bereit."
+          echo "ERROR: Zeitüberschreitung. Deployment war nicht rechtzeitig erfolgreich."
           exit 1
