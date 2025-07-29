@@ -1,4 +1,4 @@
-name: Vorschau - Temporäre Umgebung deployen
+name: Preview - Temporäre Umgebung deployen
 
 on:
   pull_request:
@@ -14,7 +14,7 @@ env:
 
 jobs:
   deploy-preview:
-    name: Job - Vorschau deployen
+    name: Job - Preview deployen
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
@@ -86,11 +86,11 @@ jobs:
         with:
           issue-number: ${{ github.event.number }}
           body: |
-            ## ✔️ Preview Environment Ready
+            ## Preview Environment Ready
             **URL:** $(jq -r '.["bachelor-preview-pr-${{ github.event.number }}"].ServiceURL' cdk-outputs.json)
 
   destroy-preview:
-    name: Job - Vorschau zerstören
+    name: Job - Preview zerstören
     if: github.event.action == 'closed'
     runs-on: ubuntu-latest
     steps:
