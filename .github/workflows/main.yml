@@ -139,8 +139,8 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Deployment erzwingen und verifizieren
-        id: force_deploy_and_verify
+      - name: Deployment überwachen und bei Bedarf starten
+        id: manage_deployment
         run: |
           set -e
 
@@ -153,34 +153,34 @@ jobs:
           SERVICE_URL="https://$(echo $SERVICE_INFO | jq -r '.[0].ServiceUrl')"
           if [ -z "$SERVICE_ARN" ] || [ "$SERVICE_ARN" == "null" ]; then echo "ERROR: Service nicht gefunden."; exit 1; fi
 
-          echo "INFO: Starte Deployment-Prozess für Commit $EXPECTED_COMMIT_SHA (max. 20 Minuten)..."
-          # Starte das Deployment einmal initial
-          aws apprunner start-deployment --service-arn $SERVICE_ARN
-
-          for i in {1..40}; do 
+          echo "INFO: Überwache Deployment für Commit $EXPECTED_COMMIT_SHA (max. 20 Minuten)..."
+          for i in {1..40}; do # max 20 Minuten (40 Versuche * 30s)
             STATUS=$(aws apprunner describe-service --service-arn $SERVICE_ARN --query "Service.Status" --output text)
             echo "INFO (Versuch $i/40): Service-Status ist '$STATUS'."
 
-            # Bei fatalem Fehler abbrechen
-            if [[ "$STATUS" == "CREATE_FAILED" || "$STATUS" == "DELETED" || "$STATUS" == "OPERATION_FAILED" ]]; then
-              echo "ERROR: Service ist im Fehlerzustand '$STATUS'."
-              exit 1
-            fi
-            
-            # Nur wenn der Service läuft ohne andere Operationen, die Version prüfen
+            # Fall 1: Service ist stabil und bereit (RUNNING)
             if [ "$STATUS" == "RUNNING" ]; then
               DEPLOYED_COMMIT_SHA=$(curl -s --fail --max-time 10 "$SERVICE_URL/deployment" | jq -r '.commitSha // "not-found"')
-              echo "INFO: Erwartet: $EXPECTED_COMMIT_SHA | Gefunden: $DEPLOYED_COMMIT_SHA"
+              echo "INFO: Erwartet: ${EXPECTED_COMMIT_SHA:0:7} | Gefunden: ${DEPLOYED_COMMIT_SHA:0:7}"
 
-              # Erfolgsfall: Alles stimmt überein
+              # Erfolgsfall: Der richtige Commit ist bereits deployed
               if [ "$DEPLOYED_COMMIT_SHA" == "$EXPECTED_COMMIT_SHA" ]; then
-                echo "SUCCESS: Korrekter Commit wurde erfolgreich deployed und ist RUNNING."
+                echo "SUCCESS: Korrekter Commit ist bereits deployed und RUNNING."
                 exit 0
               else
-                # AKTIVER EINGRIFF: Falsche Version läuft, Deployment erneut anstoßen
-                echo "WARN: Falscher Commit erkannt. Starte Deployment erneut..."
+                # Korrekturfall: Der Service läuft, aber mit altem Code. Deployment jetzt sicher starten.
+                echo "WARN: Falscher Commit erkannt. Starte Deployment jetzt..."
                 aws apprunner start-deployment --service-arn $SERVICE_ARN
               fi
+
+            # Fall 2: Service ist in einem unumkehrbaren Fehlerzustand
+            elif [[ "$STATUS" == "CREATE_FAILED" || "$STATUS" == "DELETED" || "$STATUS" == "OPERATION_FAILED" ]]; then
+              echo "ERROR: Service ist im Fehlerzustand '$STATUS'."
+              exit 1
+            
+            # Fall 3: Service arbeitet bereits (OPERATION_IN_PROGRESS). Einfach nur warten.
+            else
+              echo "INFO: Service arbeitet. Warte auf nächsten Check..."
             fi
             
             sleep 30
