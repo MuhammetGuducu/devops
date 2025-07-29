@@ -1,4 +1,4 @@
-name: Vorschau - Temporäre Umgebung deployen
+name: Preview - Temporäre Umgebung deployen
 
 on:
   pull_request:
@@ -14,7 +14,84 @@ env:
 
 jobs:
   deploy-preview:
-    name: Job - Vorschau deployen/zerstören
+    name: Job - Preview deployen
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code auschecken
+        uses: actions/checkout@v4
+
+      - name: AWS-Zugangsdaten konfigurieren
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      
+      - name: App-Tests ausführen
+        run: |
+          npm ci
+          npm test
+
+      - name: Bei Amazon ECR anmelden
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Docker-Image bauen & pushen
+        env:
+          ECR_REPOSITORY: devops-demo-preview-shared 
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: pr-${{ github.event.number }}
+        run: |
+          docker build \
+            --build-arg COMMIT_SHA=${{ github.sha }} \
+            -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} .
+          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+
+      - name: CDK Stack deployen
+        working-directory: ./infra
+        run: |
+          npm ci
+          npm run build
+          npx cdk deploy \
+            --context pr_number=${{ github.event.number }} \
+            --context commitSha=${{ github.sha }} \
+            --require-approval never \
+            --outputs-file ../cdk-outputs.json
+
+      - name: Warten bis Service betriebsbereit ist
+        run: |
+          set -e
+          SERVICE_URL=$(jq -r '.["bachelor-preview-pr-${{ github.event.number }}"].ServiceURL' cdk-outputs.json)
+          echo "INFO: Warte, bis der Service unter $SERVICE_URL erreichbar ist (max. 5 Minuten)..."
+          
+          for i in {1..20}; do # 20 Versuche * 15s = 5 Minuten
+            if curl -s -f -o /dev/null "$SERVICE_URL/health"; then
+              echo "SUCCESS: Preview-Service ist erreichbar."
+              exit 0
+            fi
+            echo "INFO (Versuch $i/20): Service noch nicht bereit. Warte 15 Sekunden..."
+            sleep 15
+          done
+
+          echo "ERROR: Zeitüberschreitung. Service war nicht rechtzeitig erreichbar."
+          exit 1
+      
+      - name: URL im Pull Request posten
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.number }}
+          body: |
+            ## Preview Environment Ready
+            **URL:** $(jq -r '.["bachelor-preview-pr-${{ github.event.number }}"].ServiceURL' cdk-outputs.json)
+
+  destroy-preview:
+    name: Job - Preview zerstören
+    if: github.event.action == 'closed'
     runs-on: ubuntu-latest
     steps:
       - name: Code auschecken
@@ -31,80 +108,7 @@ jobs:
         with:
           node-version: '22'
 
-      # Build & Test nur wenn PR nicht geschlossen
-      - name: App-Tests ausführen
-        if: github.event.action != 'closed'
-        run: |
-          npm ci
-          npm test
-
-      - name: Bei Amazon ECR anmelden
-        if: github.event.action != 'closed'
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: CDK Stack deployen
-        if: github.event.action != 'closed'
-        working-directory: ./infra
-        run: |
-          npm ci
-          npm run build
-          npx cdk deploy \
-            --context pr_number=${{ github.event.number }} \
-            --require-approval never \
-            --outputs-file ../cdk-outputs.json
-
-      - name: Docker-Image bauen & pushen
-        if: github.event.action != 'closed'
-        run: |
-          # ECR URI aus CDK Output lesen
-          ECR_URI=$(jq -r '.["BachelorPreviewStack-PR${{ github.event.number }}"].ECRRepositoryURI' cdk-outputs.json)
-          
-          # Image bauen und pushen
-          docker build \
-            --build-arg VERSION="preview-pr${{ github.event.number }}" \
-            --build-arg COMMIT_SHA=${{ github.sha }} \
-            -t $ECR_URI:pr-${{ github.event.number }} .
-          
-          docker push $ECR_URI:pr-${{ github.event.number }}
-
-      - name: Auf App Runner Deployment warten
-        if: github.event.action != 'closed'
-        run: |
-          echo "⏳ Warte 90 Sekunden auf App Runner Deployment..."
-          sleep 90
-
-      - name: Service Status prüfen
-        if: github.event.action != 'closed'
-        run: |
-          SERVICE_ARN=$(aws apprunner list-services \
-            --query "ServiceSummaryList[?ServiceName=='devops-demo-preview-pr-${{ github.event.number }}'].ServiceArn" \
-            --output text)
-          
-          if [ -n "$SERVICE_ARN" ]; then
-            STATUS=$(aws apprunner describe-service \
-              --service-arn $SERVICE_ARN \
-              --query "Service.Status" \
-              --output text)
-            echo "Service Status: $STATUS"
-          fi
-
-      - name: URL im Pull Request posten
-        if: github.event.action != 'closed'
-        uses: peter-evans/create-or-update-comment@v4
-        with:
-          issue-number: ${{ github.event.number }}
-          body: |
-            ## Preview Environment
-            
-            **Status:** Bereit  
-            **URL:** $(jq -r '.["BachelorPreviewStack-PR${{ github.event.number }}"].ServiceURL' cdk-outputs.json)
-            **Version:** preview-pr${{ github.event.number }}  
-            
-            Die Preview-Umgebung wird automatisch gelöscht, wenn der PR geschlossen wird.
-
       - name: Stack zerstören
-        if: github.event.action == 'closed'
         working-directory: ./infra
         run: |
           npm ci
