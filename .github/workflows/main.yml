@@ -179,7 +179,7 @@ jobs:
               exit 1
             
             else
-
+              echo "INFO: App Runner Service arbeitet. Warte 30 Sekunden auf nächsten Check..."
             fi
             
             sleep 30
