@@ -140,7 +140,7 @@ app.get('/deployment', (req, res) => {
     pipeline: {
       stages: ['Source', 'Test', 'Security Scan', 'Build', 'Deploy'],
       lastDeployment: deploymentInfo.deploymentTime,
-      deploymentMethod: deploymentInfo.environment === 'production' ? 'Blue/Green' : 'Rolling'
+      deploymentMethod: 'Rolling'
     }
   });
 });
